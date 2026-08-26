@@ -1,13 +1,17 @@
+import re
 from collections import defaultdict
 
 import ebooklib
 from bs4 import BeautifulSoup, NavigableString
 from ebooklib import epub
 
-# book = epub.read_epub('/home/noelcodes/dev/projects/learning_env_experiments/src/resources/aiengineering.epub')
-
 class Chunker():
     CHUNK_SIZE = 250
+    CHUNK_OVERLAP = 20
+    BLOCK_TAGS = {'p', 'div', 'li', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                  'pre', 'td', 'th', 'tr', 'dd', 'dt'}
+    PARAGRAPH_SPLIT_RE = re.compile(r'\n\s*\n')
+    SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+')
 
     def __init__(self):
         self.chunks = []
@@ -53,10 +57,17 @@ class Chunker():
                 context['section'] = title
             # depth >= 2: subsections inherit whatever section they're nested in
 
+        if tag.name in self.BLOCK_TAGS:
+            context['block'] = id(tag)
+
         for child in tag.children:
             if isinstance(child, NavigableString):
                 text = str(child).strip()
                 if text:
+                    current_block = context.get('block')
+                    if 'last_block' in context and current_block != context['last_block']:
+                        text = '\n\n' + text
+                    context['last_block'] = current_block
                     out.append((text, context['chapter'], context['section']))
             elif child.name is not None:
                 self.walk(child, landmarks, context, out)
@@ -68,7 +79,8 @@ class Chunker():
         blocks = []
         for text, chapter, section in leaves:
             if blocks and blocks[-1][1] == chapter and blocks[-1][2] == section:
-                blocks[-1] = (blocks[-1][0] + ' ' + text, chapter, section)
+                sep = '' if text.startswith('\n\n') else ' '
+                blocks[-1] = (blocks[-1][0] + sep + text, chapter, section)
             else:
                 blocks.append((text, chapter, section))
         return blocks
@@ -108,20 +120,74 @@ class Chunker():
         return blocks
 
 
-    def chunker(self):
+    def chunker_processer(self, text: str, chapter: str | None, section: str | None):
+        text = text.strip()
+        if not text:
+            return
+
+        if len(text) <= self.CHUNK_SIZE:
+            self.chunks.append({'text': text, 'chapter': chapter, 'section': section})
+            return
+
+        paragraphs = [p.strip() for p in self.PARAGRAPH_SPLIT_RE.split(text) if p.strip()]
+        if len(paragraphs) > 1:
+            for paragraph in paragraphs:
+                self.chunker_processer(paragraph, chapter, section)
+            return
+
+        sentences = [s.strip() for s in self.SENTENCE_SPLIT_RE.split(text) if s.strip()]
+        if len(sentences) > 1:
+            for sentence in sentences:
+                self.chunker_processer(sentence, chapter, section)
+            return
+
+        for piece in self.split_words_with_overlap(text):
+            self.chunks.append({'text': piece, 'chapter': chapter, 'section': section})
+
+
+    def split_words_with_overlap(self, text: str) -> list[str]:
+        """Pack whole words into <= CHUNK_SIZE pieces, never splitting a word.
+        Each piece after the first repeats ~CHUNK_OVERLAP trailing chars
+        (rounded up to whole words) from the previous piece."""
+        words = text.split()
+        pieces = []
+        start = 0
+        while start < len(words):
+            end = start
+            length = 0
+            while end < len(words):
+                extra = len(words[end]) if end == start else len(words[end]) + 1
+                if length + extra > self.CHUNK_SIZE and end > start:
+                    break
+                length += extra
+                end += 1
+            pieces.append(' '.join(words[start:end]))
+
+            if end >= len(words):
+                break
+
+            overlap_start = end
+            overlap_len = 0
+            while overlap_start > start and overlap_len < self.CHUNK_OVERLAP:
+                overlap_start -= 1
+                overlap_len += len(words[overlap_start]) + 1
+            start = overlap_start if overlap_start > start else end
+        return pieces
+
+    def book_title(self, book: epub.EpubBook) -> str | None:
+        metadata = book.get_metadata('DC', 'title')
+        return metadata[0][0] if metadata else None
+
+    def process_book(self, book: epub.EpubBook) -> list[dict]:
+        self.chunks = []
         for text, chapter, section in self.context_rewrite(book):
             self.chunker_processer(text, chapter, section)
-        print(self.chunks)
-        print(len(self.chunks))
 
+        title = self.book_title(book)
+        for chunk in self.chunks:
+            chunk['book'] = title
 
-    def chunker_processer(self, text: str, chapter: str | None, section: str | None):
-        if len(text) <= self.CHUNK_SIZE:
-            if text.strip():
-                self.chunks.append({'text': text, 'chapter': chapter, 'section': section})
-            return
-        else:
-            x = 0
-            while x < len(text):
-                self.chunker_processer(text[x:x + self.CHUNK_SIZE], chapter, section)
-                x += self.CHUNK_SIZE
+        return self.chunks
+
+    def process_books(self, books: list[epub.EpubBook]) -> list[list[dict]]:
+        return [self.process_book(book) for book in books]
