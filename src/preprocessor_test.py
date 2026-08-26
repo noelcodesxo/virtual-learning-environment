@@ -41,3 +41,27 @@ def test_process_mixed_stop_and_non_stop_words():
     preprocessor = PreProcessor()
     result = preprocessor.process("The Quick Fox")
     assert result == "quick fox"
+
+
+def test_process_strips_leading_and_trailing_ascii_punctuation():
+    preprocessor = PreProcessor()
+    result = preprocessor.process('"Hello," she said.')
+    assert result == "hello said"
+
+
+def test_process_strips_leading_and_trailing_curly_quotes_and_dashes():
+    preprocessor = PreProcessor()
+    result = preprocessor.process("“world’s” —done—")
+    assert result == "world’s done"
+
+
+def test_process_keeps_internal_hyphens_and_apostrophes():
+    preprocessor = PreProcessor()
+    result = preprocessor.process("point-in-time don't")
+    assert result == "point-in-time don't"
+
+
+def test_process_drops_tokens_that_are_only_punctuation():
+    preprocessor = PreProcessor()
+    result = preprocessor.process("word -- word2")
+    assert result == "word word2"

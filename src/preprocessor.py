@@ -1,5 +1,10 @@
+import string
+
+
 class PreProcessor():
-    STOP_WORDS = {  
+    STRIP_CHARS = string.punctuation + '‘’“”–—―'
+
+    STOP_WORDS = {
         'a', 'an', 'and', 'the', 'or', 'of', 'to', 'in', 'for', 'on', 'with',  
         'at', 'by', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him',  
         'her', 'us', 'them', 'my', 'your', 'his', 'its', 'our', 'their', 'this',  
@@ -15,6 +20,5 @@ class PreProcessor():
     }
 
     def process(self, chunk: str) -> str:
-        return ' '.join(
-            word for word in (w.lower() for w in chunk.split()) if word not in self.STOP_WORDS
-        )
+        words = (w.lower().strip(self.STRIP_CHARS) for w in chunk.split())
+        return ' '.join(word for word in words if word and word not in self.STOP_WORDS)
