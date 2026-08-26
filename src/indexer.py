@@ -16,6 +16,7 @@ class Indexer():
                 "book": chunk.get("book"),
                 "chapter": chunk.get("chapter"),
                 "section": chunk.get("section"),
+                "text": chunk.get("text"),
                 "tf_idf": {term: tf * idf[term] for term, tf in tf_map.items()},
             }
             for chunk, tf_map in zip(chunks, term_frequencies)

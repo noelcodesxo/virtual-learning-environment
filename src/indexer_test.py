@@ -49,6 +49,7 @@ def test_index_handles_single_chunk():
             "book": "Book 1",
             "chapter": "Ch1",
             "section": "S1",
+            "text": "cat dog",
             "tf_idf": {"cat": pytest.approx(0.0), "dog": pytest.approx(0.0)},
         }
     ]
