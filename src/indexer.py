@@ -6,7 +6,6 @@ class Indexer():
     def __init__(self):
         pass
 
-    # My chunks look like this: {"text": "dfkgfjkdfg", "chapter": "x", "section": "x"}
     def index(self, chunks: list[object]) -> list[dict]:
         term_frequencies = [self._term_frequencies(chunk["text"]) for chunk in chunks]
         idf = self._inverse_document_frequencies(term_frequencies, len(chunks))

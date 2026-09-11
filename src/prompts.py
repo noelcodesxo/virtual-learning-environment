@@ -1,0 +1,34 @@
+SYSTEM_PROMPT = (
+    "You are a study assistant. Answer the user's question using only the "
+    "provided context. If the context does not contain the answer, say you "
+    "don't know instead of guessing. Each excerpt includes metadata (such as "
+    "book, chapter, and section) above its text - use it to cite sources and "
+    "to answer questions about where to find something, like which chapter to read."
+)
+
+NO_CONTEXT_MESSAGE = "No relevant context was found."
+
+# tf_idf is an internal ranking weight, not something the model needs to answer with.
+EXCLUDED_METADATA_KEYS = {"text", "tf_idf"}
+
+
+def build_rag_messages(query: str, chunks: list[dict]) -> list[dict[str, str]]:
+    context = "\n\n".join(_format_chunk(chunk) for chunk in chunks) or NO_CONTEXT_MESSAGE
+    user_content = f"Context:\n{context}\n\nQuestion: {query}"
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+
+def _format_chunk(chunk: dict) -> str:
+    metadata = "\n".join(
+        f"{key}: {_format_value(value)}"
+        for key, value in chunk.items()
+        if key not in EXCLUDED_METADATA_KEYS and value is not None
+    )
+    return f"{metadata}\n{chunk['text']}"
+
+
+def _format_value(value):
+    return f"{value:.4f}" if isinstance(value, float) else value
