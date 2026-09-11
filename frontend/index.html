@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Study Assistant</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+
+    <aside class="sidebar">
+      <div class="wordmark">
+        <span class="mark">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H8l-4 4V4z"/></svg>
+        </span>
+        <span class="wordmark-text">Study Assistant</span>
+      </div>
+
+      <button id="new-chat-btn" class="new-chat" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        <span>New chat</span>
+      </button>
+
+      <div class="section-label">Recent</div>
+      <div id="recent-list" class="recent-list"></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <span id="chat-title" class="chat-title">New chat</span>
+        <div class="model-picker">
+          <span id="model-status" class="status-dot" title="Checking model server…"></span>
+          <select id="model-select" class="model-select" disabled>
+            <option value="">Loading models…</option>
+          </select>
+        </div>
+      </header>
+
+      <div id="conversation" class="conversation">
+        <div class="empty-state">
+          <p>Ask a question about the indexed library.</p>
+        </div>
+      </div>
+
+      <form id="composer" class="composer">
+        <div class="composer-inner">
+          <input id="query-input" class="query-input" type="text" placeholder="Ask a question…" autocomplete="off">
+          <button id="send-btn" class="send-btn" type="submit" aria-label="Send">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+      </form>
+    </main>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
