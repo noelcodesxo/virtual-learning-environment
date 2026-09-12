@@ -33,10 +33,10 @@ def test_build_rag_messages_omits_missing_section():
     assert "section" not in content
 
 
-def test_build_rag_messages_excludes_tf_idf():
-    chunks = [{"book": "Book A", "chapter": "Ch1", "section": None, "text": "some fact", "tf_idf": {"cat": 0.5}}]
+def test_build_rag_messages_excludes_bm25():
+    chunks = [{"book": "Book A", "chapter": "Ch1", "section": None, "text": "some fact", "bm25": {"cat": 0.5}}]
     content = build_rag_messages("q", chunks)[1]["content"]
-    assert "tf_idf" not in content
+    assert "bm25" not in content
     assert "cat" not in content
 
 
