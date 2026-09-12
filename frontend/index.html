@@ -18,17 +18,34 @@
         <span class="wordmark-text">Study Assistant</span>
       </div>
 
-      <button id="new-chat-btn" class="new-chat" type="button">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-        <span>New chat</span>
-      </button>
+      <div class="mode-switch" id="mode-switch" style="display:none">
+        <button type="button" id="tab-chat" class="active">Chat</button>
+        <button type="button" id="tab-exams">Exams</button>
+      </div>
 
-      <div class="section-label">Recent</div>
-      <div id="recent-list" class="recent-list"></div>
+      <div id="chat-sidebar">
+        <button id="new-chat-btn" class="new-chat" type="button">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          <span>New chat</span>
+        </button>
+
+        <div class="section-label">Recent</div>
+        <div id="recent-list" class="recent-list"></div>
+      </div>
+
+      <div id="exam-sidebar" style="display:none">
+        <button id="new-exam-btn" class="new-chat" type="button">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          <span>New exam</span>
+        </button>
+
+        <div class="section-label">Recent exams</div>
+        <div id="recent-exam-list" class="recent-list"></div>
+      </div>
     </aside>
 
     <main class="main">
-      <header class="topbar">
+      <header class="topbar" id="chat-topbar">
         <span id="chat-title" class="chat-title">New chat</span>
         <div class="model-picker">
           <span id="model-status" class="status-dot" title="Checking model server…"></span>
@@ -38,24 +55,149 @@
         </div>
       </header>
 
-      <div id="conversation" class="conversation">
-        <div class="empty-state">
-          <p>Ask a question about the indexed library.</p>
+      <header class="topbar" id="exam-topbar" style="display:none">
+        <div class="crumb" id="exam-crumb">New exam</div>
+        <div class="stage-track" id="exam-stage-track">
+          <span class="step" data-stage="configure">Configure</span>
+          <span class="arrow">&rarr;</span>
+          <span class="step" data-stage="generating">Generate</span>
+          <span class="arrow">&rarr;</span>
+          <span class="step" data-stage="exam">Take exam</span>
+          <span class="arrow">&rarr;</span>
+          <span class="step" data-stage="results">Review</span>
         </div>
+      </header>
+
+      <div id="chat-view">
+        <div id="conversation" class="conversation">
+          <div class="empty-state">
+            <p>Ask a question about the indexed library.</p>
+          </div>
+        </div>
+
+        <form id="composer" class="composer">
+          <div class="composer-inner">
+            <input id="query-input" class="query-input" type="text" placeholder="Ask a question…" autocomplete="off">
+            <button id="send-btn" class="send-btn" type="submit" aria-label="Send">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+        </form>
       </div>
 
-      <form id="composer" class="composer">
-        <div class="composer-inner">
-          <input id="query-input" class="query-input" type="text" placeholder="Ask a question…" autocomplete="off">
-          <button id="send-btn" class="send-btn" type="submit" aria-label="Send">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-          </button>
+      <div id="exam-view" style="display:none">
+        <div class="screen-wrap">
+
+          <!-- CONFIGURE -->
+          <section class="screen active" id="screen-configure">
+            <div class="configure-inner">
+              <h1>Build an exam</h1>
+              <p class="configure-sub">Pick a chapter, or just describe what you want &mdash; the model reads the full chapter directly, not search snippets.</p>
+
+              <div class="nl-box">
+                <div class="nl-label">Describe it</div>
+                <div class="nl-row">
+                  <input class="nl-input" id="nl-input" type="text" placeholder="e.g. Please generate an exam for me from chapter four of the AI Engineering book" autocomplete="off">
+                  <button class="nl-go" id="nl-go" type="button">Use this</button>
+                </div>
+                <div class="nl-feedback" id="nl-feedback"></div>
+              </div>
+
+              <div class="divider-or">or choose directly</div>
+
+              <div class="field-grid">
+                <div class="field">
+                  <label for="book-select">Book</label>
+                  <select id="book-select">
+                    <option value="">Loading books&hellip;</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="chapter-select">Chapter</label>
+                  <select id="chapter-select" disabled>
+                    <option value="">Select a book first</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="field-grid">
+                <div class="field">
+                  <label>Questions</label>
+                  <div class="stepper">
+                    <button type="button" id="count-down">&minus;</button>
+                    <span class="count" id="count-val">10</span>
+                    <button type="button" id="count-up">+</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="model-note">
+                <span class="glyph">i</span>
+                <span>This reads the full chapter text, so it runs on a large-context model via OpenRouter rather than the local model used for chat &mdash; generation may take a little longer.</span>
+              </div>
+
+              <p class="exam-error" id="configure-error"></p>
+
+              <button class="generate-btn" id="generate-btn" disabled type="button">Select a book and chapter</button>
+            </div>
+          </section>
+
+          <!-- GENERATING -->
+          <section class="screen" id="screen-generating">
+            <div class="generating-inner">
+              <div class="generating-target" id="gen-target">AI Engineering &middot; Chapter 4</div>
+              <div class="generating-title">Building your exam&hellip;</div>
+              <div class="typing"><span></span><span></span><span></span></div>
+              <p class="generating-note">Reading the full chapter and drafting questions &mdash; this can take a bit longer than a chat answer.</p>
+            </div>
+          </section>
+
+          <!-- EXAM -->
+          <section class="screen" id="screen-exam">
+            <div class="exam-inner">
+              <div class="exam-progress-row">
+                <span class="exam-progress-label" id="exam-progress-label">Question 1 of 10</span>
+                <span class="exam-progress-label" id="exam-answered-label">0 answered</span>
+              </div>
+              <div class="qdots" id="qdots"></div>
+              <div class="q-section-tag" id="q-section-tag">Section</div>
+              <div class="q-text" id="q-text">Question text goes here</div>
+              <div class="opt-list" id="opt-list"></div>
+              <p class="exam-error" id="exam-submit-error"></p>
+              <div class="exam-nav">
+                <button class="nav-btn" id="exam-back" type="button">Back</button>
+                <button class="nav-btn primary" id="exam-next" type="button">Next</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- RESULTS -->
+          <section class="screen" id="screen-results">
+            <div class="results-inner">
+              <div class="score-card">
+                <div>
+                  <div class="score-num" id="score-num">0/0</div>
+                  <div class="score-label">correct</div>
+                </div>
+                <div class="score-source" id="score-source"></div>
+              </div>
+
+              <div class="review-label">Review</div>
+              <div id="review-list"></div>
+
+              <div class="results-actions">
+                <button class="nav-btn primary" id="results-new" type="button">New exam</button>
+              </div>
+            </div>
+          </section>
+
         </div>
-      </form>
+      </div>
     </main>
 
   </div>
 
   <script src="app.js"></script>
+  <script src="exam.js"></script>
 </body>
 </html>
