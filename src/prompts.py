@@ -8,8 +8,8 @@ SYSTEM_PROMPT = (
 
 NO_CONTEXT_MESSAGE = "No relevant context was found."
 
-# tf_idf is an internal ranking weight, not something the model needs to answer with.
-EXCLUDED_METADATA_KEYS = {"text", "tf_idf"}
+# bm25 is an internal ranking weight, not something the model needs to answer with.
+EXCLUDED_METADATA_KEYS = {"text", "bm25"}
 
 
 def build_rag_messages(query: str, chunks: list[dict]) -> list[dict[str, str]]:
