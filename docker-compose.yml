@@ -1,8 +1,20 @@
 services:
   backend:
     build: .
+    command: uvicorn server:app --app-dir src --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
     ports:
       - "8000:8000"
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+        - action: rebuild
+          path: ./pyproject.toml
+        - action: rebuild
+          path: ./uv.lock
+    env_file:
+      - .local.env
     environment:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - LLM_MODEL=qwen3:8b
@@ -13,5 +25,14 @@ services:
     build: ./frontend
     ports:
       - "3000:80"
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend
+          target: /usr/share/nginx/html
+          ignore:
+            - Dockerfile
+        - action: rebuild
+          path: ./frontend/Dockerfile
     depends_on:
       - backend
