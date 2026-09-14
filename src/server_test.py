@@ -132,6 +132,7 @@ def test_exam_endpoints_return_404_when_feature_disabled(monkeypatch):
 
     for call in [
         lambda: server.list_books(),
+        lambda: server.resolve_exam_description(server.ResolveExamDescriptionRequest(description="a request")),
         lambda: server.generate_exam(server.GenerateExamRequest(book="B", chapter="C")),
         lambda: server.list_exams(),
         lambda: server.get_exam("missing"),
@@ -152,6 +153,22 @@ def test_list_books_returns_books_from_the_chapter_loader(monkeypatch):
     assert response.books == [server.Book(title="AI Engineering", chapters=["4. Evaluate AI Systems"])]
 
 
+def test_resolve_exam_description_uses_a_valid_model_selection(monkeypatch):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
+    books = [{"title": "AI Engineering", "chapters": ["2. Understanding Foundation Models"]}]
+    monkeypatch.setitem(server.state, "chapter_loader", _FakeChapterLoader(books=books))
+    monkeypatch.setattr(server, "build_client", lambda provider, model: _FakeClient(json.dumps({
+        "book": "AI Engineering", "chapter": "2. Understanding Foundation Models"
+    })))
+
+    response = server.resolve_exam_description(server.ResolveExamDescriptionRequest(
+        description="AI Engineering book second chapter, mostly on transformer architecture"
+    ))
+
+    assert response.book == "AI Engineering"
+    assert response.chapter == "2. Understanding Foundation Models"
+
+
 def test_generate_exam_stores_answers_but_does_not_return_them(monkeypatch):
     monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
     loader = _FakeChapterLoader(chapter_text_by_key={("AI Engineering", "4. Evaluate AI Systems"): "chapter text"})
@@ -170,6 +187,29 @@ def test_generate_exam_stores_answers_but_does_not_return_them(monkeypatch):
     stored = server.state["exams"][response.id]
     assert stored["questions"][0]["correct_index"] == 1
     assert stored["score"] is None
+
+
+def test_generate_exam_preserves_a_description_request(monkeypatch):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
+    monkeypatch.setitem(server.state, "chapter_loader", _FakeChapterLoader(
+        chapter_text_by_key={("AI Engineering", "4. Evaluate AI Systems"): "chapter text"}
+    ))
+    monkeypatch.setitem(server.state, "exams", {})
+    monkeypatch.setattr(server, "build_client", lambda provider, model: _FakeClient(json.dumps([_exam_question()])))
+
+    response = server.generate_exam(server.GenerateExamRequest(
+        book="AI Engineering",
+        chapter="4. Evaluate AI Systems",
+        num_questions=1,
+        generated_from="description",
+        description="  Focus on practical evaluation tradeoffs.  ",
+    ))
+
+    assert response.generated_from == "description"
+    assert response.description == "Focus on practical evaluation tradeoffs."
+    assert response.requested_question_count == 1
+    assert server.state["exams"][response.id]["description"] == "Focus on practical evaluation tradeoffs."
+    assert server.get_exam(response.id).description == "Focus on practical evaluation tradeoffs."
 
 
 def test_generate_exam_raises_404_when_chapter_not_found(monkeypatch):

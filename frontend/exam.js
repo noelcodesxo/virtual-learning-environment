@@ -2,7 +2,6 @@
 // BM25 search results; exams are generated from a whole chapter's text via
 // /exams, and correct answers are only ever returned after /exams/{id}/grade.
 
-const NUM_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
 const OPTION_LETTERS = ["A", "B", "C", "D"];
 
 const modeSwitchEl = document.getElementById("mode-switch");
@@ -32,6 +31,8 @@ const generateBtnEl = document.getElementById("generate-btn");
 const configureErrorEl = document.getElementById("configure-error");
 
 const genTargetEl = document.getElementById("gen-target");
+const examRequestEl = document.getElementById("exam-request");
+const resultRequestEl = document.getElementById("result-request");
 
 const examProgressLabelEl = document.getElementById("exam-progress-label");
 const examAnsweredLabelEl = document.getElementById("exam-answered-label");
@@ -52,6 +53,7 @@ let books = [];
 let selectedBook = "";
 let selectedChapter = "";
 let questionCount = 10;
+let generationSource = "form";
 
 let currentExam = null; // { id, book, chapter, questions: [{section, question, options}] }
 let examAnswers = {};
@@ -155,6 +157,7 @@ function refreshGenerateState() {
 }
 
 bookSelectEl.addEventListener("change", () => {
+  generationSource = "form";
   selectedBook = bookSelectEl.value;
   selectedChapter = "";
   populateChapterSelect(selectedBook);
@@ -162,6 +165,7 @@ bookSelectEl.addEventListener("change", () => {
 });
 
 chapterSelectEl.addEventListener("change", () => {
+  generationSource = "form";
   selectedChapter = chapterSelectEl.value;
   refreshGenerateState();
 });
@@ -176,63 +180,53 @@ countUpEl.addEventListener("click", () => {
   countValEl.textContent = questionCount;
 });
 
-function parseNL(text) {
-  const lower = text.toLowerCase();
-  const matchedBook = books.find((b) => lower.includes(b.title.toLowerCase())) || null;
-
-  let chapterNum = null;
-  const digitMatch = lower.match(/chapter\s+(\d{1,2})/);
-  if (digitMatch) {
-    chapterNum = parseInt(digitMatch[1], 10);
-  } else {
-    const wordMatch = lower.match(/chapter\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)/);
-    if (wordMatch) chapterNum = NUM_WORDS[wordMatch[1]];
-  }
-
-  return { book: matchedBook, chapterNum };
-}
-
-function runParse(text) {
+async function runParse(text) {
   if (!text.trim()) {
     nlFeedbackEl.textContent = "";
     nlFeedbackEl.className = "nl-feedback";
     return;
   }
 
-  const { book, chapterNum } = parseNL(text);
-  const chapter = book && chapterNum ? book.chapters.find((c) => c.startsWith(`${chapterNum}.`)) : null;
+  nlGoEl.disabled = true;
+  nlFeedbackEl.textContent = "Finding the best source chapter…";
+  nlFeedbackEl.className = "nl-feedback";
 
-  if (book && chapter) {
-    bookSelectEl.value = book.title;
-    selectedBook = book.title;
-    populateChapterSelect(book.title);
-    chapterSelectEl.value = chapter;
-    selectedChapter = chapter;
+  try {
+    const response = await fetch(`${API_BASE}/exams/resolve-description`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: text.trim() }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || `Request failed (${response.status}).`);
+
+    generationSource = "description";
+    bookSelectEl.value = data.book;
+    selectedBook = data.book;
+    populateChapterSelect(data.book);
+    chapterSelectEl.value = data.chapter;
+    selectedChapter = data.chapter;
     refreshGenerateState();
-    nlFeedbackEl.textContent = `Matched: ${book.title} → ${chapter}`;
+    nlFeedbackEl.textContent = `Using: ${data.book} → ${data.chapter}. Your description will guide the exam focus.`;
     nlFeedbackEl.className = "nl-feedback ok";
-  } else if (book) {
-    bookSelectEl.value = book.title;
-    selectedBook = book.title;
-    populateChapterSelect(book.title);
-    refreshGenerateState();
-    nlFeedbackEl.textContent = "Found the book, but not a chapter — pick one below.";
+  } catch (err) {
+    nlFeedbackEl.textContent = err.message || "Could not identify a source chapter.";
     nlFeedbackEl.className = "nl-feedback err";
-  } else {
-    nlFeedbackEl.textContent = "Couldn't match that to a book — try selecting below.";
-    nlFeedbackEl.className = "nl-feedback err";
+  } finally {
+    nlGoEl.disabled = false;
   }
 }
 
 nlGoEl.addEventListener("click", () => runParse(nlInputEl.value));
 nlInputEl.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") runParse(nlInputEl.value);
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) runParse(nlInputEl.value);
 });
 
 function resetConfigure() {
   selectedBook = "";
   selectedChapter = "";
   questionCount = 10;
+  generationSource = "form";
   bookSelectEl.value = "";
   populateChapterSelect("");
   countValEl.textContent = "10";
@@ -259,7 +253,13 @@ async function generateExam() {
     const response = await fetch(`${API_BASE}/exams`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ book: selectedBook, chapter: selectedChapter, num_questions: questionCount }),
+      body: JSON.stringify({
+        book: selectedBook,
+        chapter: selectedChapter,
+        num_questions: questionCount,
+        generated_from: generationSource,
+        description: generationSource === "description" ? nlInputEl.value.trim() : null,
+      }),
     });
 
     if (!response.ok) {
@@ -279,6 +279,19 @@ async function generateExam() {
   }
 }
 
+function requestSummary(exam) {
+  if (exam.generated_from === "description" && exam.description) return `Your request: ${exam.description}`;
+  const count = exam.requested_question_count || exam.questions?.length || exam.total;
+  return `Form request: ${exam.book} · ${exam.chapter} · ${count} questions.`;
+}
+
+function renderRequestContext(exam) {
+  for (const target of [examRequestEl, resultRequestEl]) {
+    target.textContent = requestSummary(exam);
+    target.hidden = false;
+  }
+}
+
 generateBtnEl.addEventListener("click", generateExam);
 
 function renderDots() {
@@ -295,6 +308,7 @@ function renderDots() {
 
 function renderQuestion() {
   const question = currentExam.questions[examCurrentIndex];
+  renderRequestContext(currentExam);
   examProgressLabelEl.textContent = `Question ${examCurrentIndex + 1} of ${currentExam.questions.length}`;
   examAnsweredLabelEl.textContent = `${Object.keys(examAnswers).length} answered`;
   qSectionTagEl.textContent = question.section;
@@ -370,6 +384,7 @@ function renderResults(data) {
   scoreSourceEl.appendChild(document.createTextNode(data.book));
   scoreSourceEl.appendChild(document.createElement("br"));
   scoreSourceEl.appendChild(el("b", null, data.chapter));
+  renderRequestContext(currentExam);
 
   reviewListEl.innerHTML = "";
   data.review.forEach((question, i) => {
@@ -429,7 +444,9 @@ function renderRecentExamList(exams) {
     item.type = "button";
     item.appendChild(el("span", "recent-item-title", `${exam.book} · ${exam.chapter}`));
     const meta = exam.score === null ? "not started" : `${exam.score}/${exam.total}`;
-    item.appendChild(el("span", "recent-item-meta", meta));
+    const source = exam.generated_from === "description" ? "description" : "form";
+    item.appendChild(el("span", "recent-item-meta", `${meta} · ${exam.requested_question_count} questions · ${source}`));
+    if (exam.description) item.title = exam.description;
     item.addEventListener("click", () => openExam(exam.id));
     recentExamListEl.appendChild(item);
   }
@@ -444,10 +461,19 @@ async function openExam(examId) {
     examCrumbEl.textContent = `${data.book} · ${data.chapter}`;
 
     if (data.graded) {
+      currentExam = data;
       renderResults(data);
       showScreen("screen-results", "results");
     } else {
-      currentExam = { id: data.id, book: data.book, chapter: data.chapter, questions: data.questions };
+      currentExam = {
+        id: data.id,
+        book: data.book,
+        chapter: data.chapter,
+        generated_from: data.generated_from,
+        description: data.description,
+        requested_question_count: data.requested_question_count,
+        questions: data.questions,
+      };
       examAnswers = {};
       examCurrentIndex = 0;
       renderQuestion();

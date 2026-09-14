@@ -6,6 +6,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from ebooklib import epub
 from fastapi import FastAPI, HTTPException
@@ -16,6 +17,7 @@ from chapter_loader import ChapterLoader
 from chunker import Chunker
 from exam_parser import parse_exam_json
 from exam_prompts import build_exam_messages
+from exam_selection import build_exam_selection_messages, parse_exam_selection_json
 from index_loader import load_index
 from indexer import Indexer
 from llm_client import build_client
@@ -159,6 +161,17 @@ class GenerateExamRequest(BaseModel):
     book: str
     chapter: str
     num_questions: int = Field(10, ge=1, le=30)
+    generated_from: Literal["form", "description"] = "form"
+    description: str | None = None
+
+
+class ResolveExamDescriptionRequest(BaseModel):
+    description: str = Field(min_length=1, max_length=4_000)
+
+
+class ResolveExamDescriptionResponse(BaseModel):
+    book: str
+    chapter: str
 
 
 class ExamQuestion(BaseModel):
@@ -171,6 +184,9 @@ class GenerateExamResponse(BaseModel):
     id: str
     book: str
     chapter: str
+    generated_from: Literal["form", "description"]
+    description: str | None
+    requested_question_count: int
     questions: list[ExamQuestion]
 
 
@@ -203,6 +219,9 @@ class ExamSummary(BaseModel):
     created_at: str
     total: int
     score: int | None
+    generated_from: Literal["form", "description"]
+    description: str | None
+    requested_question_count: int
 
 
 class ExamListResponse(BaseModel):
@@ -213,6 +232,9 @@ class ExamDetailResponse(BaseModel):
     id: str
     book: str
     chapter: str
+    generated_from: Literal["form", "description"]
+    description: str | None
+    requested_question_count: int
     graded: bool
     questions: list[ExamQuestion] | None = None
     score: int | None = None
@@ -246,16 +268,50 @@ def list_books():
     return BooksResponse(books=[Book(**b) for b in state["chapter_loader"].list_books()])
 
 
+@app.post("/exams/resolve-description", response_model=ResolveExamDescriptionResponse)
+def resolve_exam_description(request: ResolveExamDescriptionRequest):
+    _require_exam_builder_enabled()
+    description = request.description.strip()
+    if not description:
+        raise HTTPException(status_code=400, detail="description must not be empty")
+
+    books = state["chapter_loader"].list_books()
+    messages = build_exam_selection_messages(description, books)
+    try:
+        raw = build_client("openrouter", EXAM_MODEL).chat(messages)
+    except KeyError as exc:
+        raise HTTPException(status_code=500, detail=f"Missing required environment variable: {exc}") from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise HTTPException(status_code=502, detail=f"Could not resolve exam source: {exc}") from exc
+
+    try:
+        book, chapter = parse_exam_selection_json(raw, books)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Could not resolve a book and chapter: {exc}") from exc
+
+    return ResolveExamDescriptionResponse(book=book, chapter=chapter)
+
+
 @app.post("/exams", response_model=GenerateExamResponse)
 def generate_exam(request: GenerateExamRequest):
     _require_exam_builder_enabled()
+
+    description = request.description.strip() if request.description else None
+    if request.generated_from == "description" and not description:
+        raise HTTPException(status_code=400, detail="description must not be empty when generated_from is 'description'")
 
     try:
         chapter_text = state["chapter_loader"].load_chapter_text(request.book, request.chapter)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    messages = build_exam_messages(request.book, request.chapter, chapter_text, request.num_questions)
+    messages = build_exam_messages(
+        request.book,
+        request.chapter,
+        chapter_text,
+        request.num_questions,
+        description=description if request.generated_from == "description" else None,
+    )
 
     try:
         client = build_client("openrouter", EXAM_MODEL)
@@ -279,11 +335,17 @@ def generate_exam(request: GenerateExamRequest):
         "created_at": datetime.now(timezone.utc).isoformat(),
         "answers": None,
         "score": None,
+        "generated_from": request.generated_from,
+        "description": description if request.generated_from == "description" else None,
+        "requested_question_count": request.num_questions,
     }
     return GenerateExamResponse(
         id=exam_id,
         book=request.book,
         chapter=request.chapter,
+        generated_from=request.generated_from,
+        description=state["exams"][exam_id]["description"],
+        requested_question_count=request.num_questions,
         questions=[
             ExamQuestion(section=q["section"], question=q["question"], options=q["options"]) for q in questions
         ],
@@ -303,6 +365,9 @@ def list_exams():
                 created_at=e["created_at"],
                 total=len(e["questions"]),
                 score=e["score"],
+                generated_from=e.get("generated_from", "form"),
+                description=e.get("description"),
+                requested_question_count=e.get("requested_question_count", len(e["questions"])),
             )
             for e in exams
         ]
@@ -321,6 +386,9 @@ def get_exam(exam_id: str):
             id=exam["id"],
             book=exam["book"],
             chapter=exam["chapter"],
+            generated_from=exam.get("generated_from", "form"),
+            description=exam.get("description"),
+            requested_question_count=exam.get("requested_question_count", len(exam["questions"])),
             graded=True,
             score=exam["score"],
             total=len(exam["questions"]),
@@ -331,6 +399,9 @@ def get_exam(exam_id: str):
         id=exam["id"],
         book=exam["book"],
         chapter=exam["chapter"],
+        generated_from=exam.get("generated_from", "form"),
+        description=exam.get("description"),
+        requested_question_count=exam.get("requested_question_count", len(exam["questions"])),
         graded=False,
         questions=[
             ExamQuestion(section=q["section"], question=q["question"], options=q["options"])

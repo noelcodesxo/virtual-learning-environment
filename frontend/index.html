@@ -95,10 +95,10 @@
               <p class="configure-sub">Pick a chapter, or just describe what you want &mdash; the model reads the full chapter directly, not search snippets.</p>
 
               <div class="nl-box">
-                <div class="nl-label">Describe it</div>
+                <div class="nl-label">Describe the exam</div>
                 <div class="nl-row">
-                  <input class="nl-input" id="nl-input" type="text" placeholder="e.g. Please generate an exam for me from chapter four of the AI Engineering book" autocomplete="off">
-                  <button class="nl-go" id="nl-go" type="button">Use this</button>
+                  <textarea class="nl-input" id="nl-input" rows="3" placeholder="e.g. Generate an exam from the AI Engineering book's second chapter, but mostly on transformer architecture."></textarea>
+                  <button class="nl-go" id="nl-go" type="button">Use description</button>
                 </div>
                 <div class="nl-feedback" id="nl-feedback"></div>
               </div>
@@ -159,6 +159,7 @@
                 <span class="exam-progress-label" id="exam-progress-label">Question 1 of 10</span>
                 <span class="exam-progress-label" id="exam-answered-label">0 answered</span>
               </div>
+              <div class="exam-request" id="exam-request" hidden></div>
               <div class="qdots" id="qdots"></div>
               <div class="q-section-tag" id="q-section-tag">Section</div>
               <div class="q-text" id="q-text">Question text goes here</div>
@@ -181,6 +182,7 @@
                 </div>
                 <div class="score-source" id="score-source"></div>
               </div>
+              <div class="exam-request" id="result-request" hidden></div>
 
               <div class="review-label">Review</div>
               <div id="review-list"></div>
@@ -198,6 +200,6 @@
   </div>
 
   <script src="app.js"></script>
-  <script src="exam.js"></script>
+  <script src="exam.js?v=description-resolver-1"></script>
 </body>
 </html>
