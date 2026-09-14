@@ -22,17 +22,25 @@ services:
       - "host.docker.internal:host-gateway"
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      target: development
     ports:
-      - "3000:80"
+      - "3000:3000"
+    environment:
+      - BACKEND_URL=http://backend:8000
     develop:
       watch:
         - action: sync
           path: ./frontend
-          target: /usr/share/nginx/html
+          target: /app
           ignore:
+            - node_modules/
+            - .next/
             - Dockerfile
         - action: rebuild
-          path: ./frontend/Dockerfile
+          path: ./frontend/package.json
+        - action: rebuild
+          path: ./frontend/package-lock.json
     depends_on:
       - backend
