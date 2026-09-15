@@ -24,24 +24,37 @@ export function ChatWorkspace() {
       setModels(available); setModel(available[0] ?? "");
     }).catch(() => setModelsError(true));
   }, []);
+  useEffect(() => {
+    api.chatThreads().then((items) => setThreads(items.map((item) => ({ ...item, messages: [] })))).catch(() => {});
+  }, []);
 
   const currentThread = useMemo(() => threads.find((thread) => thread.id === currentThreadId) ?? null, [threads, currentThreadId]);
   const replaceThread = (id: string, updater: (thread: Thread) => Thread) => setThreads((all) => all.map((thread) => thread.id === id ? updater(thread) : thread));
+  async function openThread(id: string) {
+    const data = await api.chatThread(id);
+    replaceThread(id, (thread) => ({ ...thread, title: data.title, messages: data.messages }));
+    setCurrentThreadId(id);
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const text = query.trim();
     if (!text || isSending) return;
     setQuery(""); setIsSending(true);
-    const id = currentThread?.id ?? crypto.randomUUID();
+    const id = currentThread?.id;
     if (!currentThread) {
-      setThreads((all) => [{ id, title: truncate(text), messages: [] }, ...all]);
-      setCurrentThreadId(id);
+      setThreads((all) => [{ id: "pending", title: truncate(text), messages: [] }, ...all]);
+      setCurrentThreadId("pending");
     }
-    const append = (message: Message) => replaceThread(id, (thread) => ({ ...thread, messages: [...thread.messages, message] }));
+    const localId = id ?? "pending";
+    const append = (message: Message) => replaceThread(localId, (thread) => ({ ...thread, messages: [...thread.messages, message] }));
     append({ role: "user", content: text });
     try {
-      const response = await api.chat(text, model);
+      const response = await api.chat(text, model, id);
+      if (!id) {
+        setThreads((all) => all.map((thread) => thread.id === "pending" ? { ...thread, id: response.thread_id, title: response.title } : thread));
+        setCurrentThreadId(response.thread_id);
+      }
       append({ role: "assistant", content: response.answer, sources: response.sources });
     } catch (error) {
       append({ role: "assistant", content: error instanceof Error ? error.message : "Could not reach the server.", error: true });
@@ -58,7 +71,7 @@ export function ChatWorkspace() {
     </div></header>
     <div className="workspace">
       <aside className="workspace-sidebar"><button className="new-chat" type="button" onClick={() => setCurrentThreadId(null)}>＋ <span>New chat</span></button><div className="section-label">Recent</div>
-        <div className="recent-list">{threads.map((thread) => <button key={thread.id} type="button" className={`recent-item${thread.id === currentThreadId ? " active" : ""}`} aria-current={thread.id === currentThreadId ? "page" : undefined} onClick={() => setCurrentThreadId(thread.id)}>{thread.title}</button>)}</div>
+        <div className="recent-list">{threads.map((thread) => <button key={thread.id} type="button" className={`recent-item${thread.id === currentThreadId ? " active" : ""}`} aria-current={thread.id === currentThreadId ? "page" : undefined} onClick={() => openThread(thread.id)}>{thread.title}</button>)}</div>
       </aside>
       <section className="chat-panel" aria-label="Chat"><div className="conversation"><div className="thread" role="log" aria-live="polite" aria-relevant="additions text">
         {!currentThread?.messages.length && <div className="empty-state"><p>Ask a question about the indexed library.</p></div>}

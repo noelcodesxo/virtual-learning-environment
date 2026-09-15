@@ -27,6 +27,8 @@ services:
       target: development
     ports:
       - "3000:3000"
+    env_file:
+      - .local.env
     environment:
       - BACKEND_URL=http://backend:8000
     develop:

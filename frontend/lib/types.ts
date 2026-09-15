@@ -5,7 +5,7 @@ export type Source = {
   score: number;
 };
 
-export type ChatResponse = { answer: string; sources: Source[] };
+export type ChatResponse = { answer: string; sources: Source[]; thread_id: string; title: string };
 
 export type Book = { title: string; chapters: string[] };
 

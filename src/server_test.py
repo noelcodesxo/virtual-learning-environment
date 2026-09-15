@@ -39,6 +39,28 @@ class _FakeClient:
         return self._answer
 
 
+class _StateRepository:
+    def __init__(self, state): self.state = state; self.state.setdefault("exams", {}); self.state.setdefault("threads", {})
+    def create_thread(self, user_id, title):
+        thread = {"id": "thread-1", "title": title, "updated_at": "2024-01-01T00:00:00+00:00"}; self.state["threads"][thread["id"]] = thread; return thread
+    def get_thread(self, user_id, thread_id): return self.state["threads"].get(thread_id)
+    def add_message(self, *args, **kwargs): pass
+    def list_threads(self, user_id): return list(self.state["threads"].values())
+    def get_messages(self, user_id, thread_id): return []
+    def create_exam(self, user_id, exam): self.state["exams"][exam["id"]] = exam
+    def list_exams(self, user_id): return sorted(self.state["exams"].values(), key=lambda exam: exam["created_at"], reverse=True)
+    def get_exam(self, user_id, exam_id): return self.state["exams"].get(exam_id)
+    def grade_exam(self, user_id, exam_id, answers):
+        exam = self.get_exam(user_id, exam_id)
+        if exam is None: return None
+        exam["answers"] = answers; exam["score"] = sum(1 for i, question in enumerate(exam["questions"]) if answers.get(i) == question["correct_index"]); return exam
+
+
+@pytest.fixture(autouse=True)
+def fake_repository(monkeypatch):
+    monkeypatch.setattr(server, "get_repository", lambda: _StateRepository(server.state))
+
+
 def test_list_models_returns_sorted_model_names(monkeypatch):
     def fake_urlopen(request, timeout=None):
         return _FakeResponse({"models": [{"name": "qwen3:8b"}, {"name": "llama3"}]})
@@ -79,6 +101,7 @@ def test_chat_returns_answer_and_sources_from_retrieved_chunks(monkeypatch):
     response = chat(ChatRequest(query="what is RLHF?", model="qwen3:8b"))
 
     assert response.answer == "the answer"
+    assert response.thread_id == "thread-1"
     assert response.sources == [
         server.Source(book="AI Engineering", chapter="Ch. 4", section="RLHF", score=0.82)
     ]

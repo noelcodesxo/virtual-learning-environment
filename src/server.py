@@ -9,11 +9,12 @@ from pathlib import Path
 from typing import Literal
 
 from ebooklib import epub
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from chapter_loader import ChapterLoader
+from auth import CurrentUser, require_current_user
 from chunker import Chunker
 from exam_parser import parse_exam_json
 from exam_prompts import build_exam_messages
@@ -24,6 +25,7 @@ from llm_client import build_client
 from preprocessor import PreProcessor
 from prompts import build_rag_messages
 from retriever import Retriever
+from user_repository import get_repository
 
 RESOURCES_DIR = Path(__file__).parent / "resources"
 INDEX_PATH = Path(os.environ.get("INDEX_PATH", Path(__file__).parent.parent / "index.json"))
@@ -61,7 +63,6 @@ async def lifespan(app: FastAPI):
     state["index"] = load_index(INDEX_PATH) if INDEX_PATH.exists() else build_index()
     state["retriever"] = Retriever()
     state["chapter_loader"] = ChapterLoader(RESOURCES_DIR)
-    state["exams"] = {}
     yield
     state.clear()
 
@@ -78,6 +79,7 @@ app.add_middleware(
 class ChatRequest(BaseModel):
     query: str
     model: str = DEFAULT_MODEL
+    thread_id: str | None = None
 
 
 class Source(BaseModel):
@@ -90,10 +92,30 @@ class Source(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     sources: list[Source]
+    thread_id: str
+    title: str
 
 
 class ModelsResponse(BaseModel):
     models: list[str]
+
+
+class ChatThreadSummary(BaseModel):
+    id: str
+    title: str
+    updated_at: str
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+    sources: list[Source] | None = None
+
+
+class ChatThreadResponse(BaseModel):
+    id: str
+    title: str
+    messages: list[ChatMessage]
 
 
 def fetch_ollama_models(base_url: str) -> list[str]:
@@ -111,8 +133,17 @@ def list_models():
     return ModelsResponse(models=fetch_ollama_models(OLLAMA_BASE_URL))
 
 
+def _chat_title(text: str) -> str:
+    return text if len(text) <= 40 else f"{text[:39].rstrip()}…"
+
+
+def _user_id(user: CurrentUser) -> str:
+    # Direct unit tests call route functions without FastAPI resolving Depends.
+    return getattr(user, "id", "test-user")
+
+
 @app.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest):
+def chat(request: ChatRequest, user: CurrentUser = Depends(require_current_user)):
     if not request.query.strip():
         raise HTTPException(status_code=400, detail="query must not be empty")
 
@@ -129,7 +160,30 @@ def chat(request: ChatRequest):
         Source(book=r.get("book"), chapter=r.get("chapter"), section=r.get("section"), score=r["score"])
         for r in results
     ]
-    return ChatResponse(answer=answer, sources=sources)
+    repository = get_repository()
+    if request.thread_id:
+        thread = repository.get_thread(_user_id(user), request.thread_id)
+        if thread is None:
+            raise HTTPException(status_code=404, detail="Chat thread not found")
+    else:
+        thread = repository.create_thread(_user_id(user), _chat_title(request.query.strip()))
+    repository.add_message(_user_id(user), thread["id"], "user", request.query.strip())
+    repository.add_message(_user_id(user), thread["id"], "assistant", answer, [source.model_dump() for source in sources])
+    return ChatResponse(answer=answer, sources=sources, thread_id=thread["id"], title=thread["title"])
+
+
+@app.get("/chat/threads", response_model=list[ChatThreadSummary])
+def list_chat_threads(user: CurrentUser = Depends(require_current_user)):
+    return [ChatThreadSummary(**thread) for thread in get_repository().list_threads(_user_id(user))]
+
+
+@app.get("/chat/threads/{thread_id}", response_model=ChatThreadResponse)
+def get_chat_thread(thread_id: str, user: CurrentUser = Depends(require_current_user)):
+    repository = get_repository()
+    thread = repository.get_thread(_user_id(user), thread_id)
+    if thread is None:
+        raise HTTPException(status_code=404, detail="Chat thread not found")
+    return ChatThreadResponse(id=thread["id"], title=thread["title"], messages=[ChatMessage(role=m["role"], content=m["content"], sources=m.get("sources")) for m in repository.get_messages(_user_id(user), thread_id)])
 
 
 class FeaturesResponse(BaseModel):
@@ -256,20 +310,20 @@ def _build_review(exam: dict) -> list[ReviewQuestion]:
             options=q["options"],
             correct_index=q["correct_index"],
             why=q["why"],
-            given_index=answers.get(i),
+            given_index=answers.get(i, answers.get(str(i))),
         )
         for i, q in enumerate(exam["questions"])
     ]
 
 
 @app.get("/books", response_model=BooksResponse)
-def list_books():
+def list_books(user: CurrentUser = Depends(require_current_user)):
     _require_exam_builder_enabled()
     return BooksResponse(books=[Book(**b) for b in state["chapter_loader"].list_books()])
 
 
 @app.post("/exams/resolve-description", response_model=ResolveExamDescriptionResponse)
-def resolve_exam_description(request: ResolveExamDescriptionRequest):
+def resolve_exam_description(request: ResolveExamDescriptionRequest, user: CurrentUser = Depends(require_current_user)):
     _require_exam_builder_enabled()
     description = request.description.strip()
     if not description:
@@ -293,7 +347,7 @@ def resolve_exam_description(request: ResolveExamDescriptionRequest):
 
 
 @app.post("/exams", response_model=GenerateExamResponse)
-def generate_exam(request: GenerateExamRequest):
+def generate_exam(request: GenerateExamRequest, user: CurrentUser = Depends(require_current_user)):
     _require_exam_builder_enabled()
 
     description = request.description.strip() if request.description else None
@@ -327,7 +381,7 @@ def generate_exam(request: GenerateExamRequest):
         raise HTTPException(status_code=502, detail=f"Could not parse exam from model output: {exc}") from exc
 
     exam_id = str(uuid.uuid4())
-    state["exams"][exam_id] = {
+    exam = {
         "id": exam_id,
         "book": request.book,
         "chapter": request.chapter,
@@ -339,12 +393,13 @@ def generate_exam(request: GenerateExamRequest):
         "description": description if request.generated_from == "description" else None,
         "requested_question_count": request.num_questions,
     }
+    get_repository().create_exam(_user_id(user), exam)
     return GenerateExamResponse(
         id=exam_id,
         book=request.book,
         chapter=request.chapter,
         generated_from=request.generated_from,
-        description=state["exams"][exam_id]["description"],
+        description=exam["description"],
         requested_question_count=request.num_questions,
         questions=[
             ExamQuestion(section=q["section"], question=q["question"], options=q["options"]) for q in questions
@@ -353,9 +408,9 @@ def generate_exam(request: GenerateExamRequest):
 
 
 @app.get("/exams", response_model=ExamListResponse)
-def list_exams():
+def list_exams(user: CurrentUser = Depends(require_current_user)):
     _require_exam_builder_enabled()
-    exams = sorted(state["exams"].values(), key=lambda e: e["created_at"], reverse=True)
+    exams = get_repository().list_exams(_user_id(user))
     return ExamListResponse(
         exams=[
             ExamSummary(
@@ -375,9 +430,9 @@ def list_exams():
 
 
 @app.get("/exams/{exam_id}", response_model=ExamDetailResponse)
-def get_exam(exam_id: str):
+def get_exam(exam_id: str, user: CurrentUser = Depends(require_current_user)):
     _require_exam_builder_enabled()
-    exam = state["exams"].get(exam_id)
+    exam = get_repository().get_exam(_user_id(user), exam_id)
     if exam is None:
         raise HTTPException(status_code=404, detail="Exam not found")
 
@@ -411,22 +466,18 @@ def get_exam(exam_id: str):
 
 
 @app.post("/exams/{exam_id}/grade", response_model=GradeExamResponse)
-def grade_exam(exam_id: str, request: GradeExamRequest):
+def grade_exam(exam_id: str, request: GradeExamRequest, user: CurrentUser = Depends(require_current_user)):
     _require_exam_builder_enabled()
-    exam = state["exams"].get(exam_id)
+    answers = {int(index): choice for index, choice in request.answers.items()}
+    exam = get_repository().grade_exam(_user_id(user), exam_id, answers)
     if exam is None:
         raise HTTPException(status_code=404, detail="Exam not found")
-
-    answers = {int(index): choice for index, choice in request.answers.items()}
-    score = sum(1 for i, q in enumerate(exam["questions"]) if answers.get(i) == q["correct_index"])
-    exam["answers"] = answers
-    exam["score"] = score
 
     return GradeExamResponse(
         id=exam["id"],
         book=exam["book"],
         chapter=exam["chapter"],
-        score=score,
+        score=exam["score"],
         total=len(exam["questions"]),
         review=_build_review(exam),
     )
