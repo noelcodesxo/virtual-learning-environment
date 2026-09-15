@@ -16,7 +16,9 @@ def test_build_exam_messages_system_prompt_requires_json_array():
     messages = build_exam_messages("Book", "Chapter", "text", 10)
     assert "JSON array" in messages[0]["content"]
     assert "correct_index" in messages[0]["content"]
-    assert "80-90%" in messages[0]["content"]
+    assert "every question must directly assess" in messages[0]["content"]
+    assert "central concepts" in messages[0]["content"]
+    assert "Avoid trivia" in messages[0]["content"]
     assert "outside knowledge" in messages[0]["content"]
 
 
