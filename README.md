@@ -16,8 +16,8 @@ The portable Supabase CLI configuration and migrations are committed in
    with the local workout tracker.
 2. Copy `frontend/.env.example` to `frontend/.env.local`.
 3. Copy `.local.env.example` to `.local.env`.
-4. Run `npx supabase status`, then copy its API URL, publishable key, anon key,
-   and secret/service key into the appropriate local env files.
+4. Run `npx supabase status`, then copy its values into the two local env files
+   using the mapping below.
 5. Run `npx supabase db reset` to apply the migration locally.
 
 For local Google login, set the Google client ID and secret in `.local.env`,
@@ -58,6 +58,34 @@ npm run dev
 Open `http://localhost:3000`, choose **Continue with Google**, and sign in.
 To shut down the local database stack later, run `npx supabase stop` from the
 repository root.
+
+### Supabase value reference
+
+`SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are not
+values you invent. Supabase creates them for each project.
+
+For **local development**, run `npx supabase status` after `npx supabase start`.
+Use this exact mapping:
+
+| Put this in `.local.env` | Copy this field from `npx supabase status` | What it does |
+| --- | --- | --- |
+| `SUPABASE_URL` | `API_URL` | The address of the local Supabase API, normally `http://127.0.0.1:54331` in this project. |
+| `SUPABASE_ANON_KEY` | `ANON_KEY` | The browser-safe/limited key FastAPI uses when it asks Supabase Auth to verify a user's login token. |
+| `SUPABASE_SERVICE_ROLE_KEY` | `SERVICE_ROLE_KEY` | The backend's private administrative key for saving chats, exams, and answer keys. It bypasses Row Level Security, so it must never be put in `frontend/.env.local`, source code, or Git. |
+
+Also put these frontend values in `frontend/.env.local`:
+
+| Put this in `frontend/.env.local` | Copy this field from `npx supabase status` | What it does |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | `API_URL` | Lets the browser locate the local Supabase Auth service. |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `PUBLISHABLE_KEY` | The public browser key used for Google sign-in and maintaining the user session. |
+
+For a **hosted Supabase project**, open the Supabase Dashboard for that project,
+choose **Connect**, and copy the Project URL, Publishable key, and Secret key.
+The Project URL is used for both `SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_URL`; the publishable key is for the frontend; the secret
+key is only for `SUPABASE_SERVICE_ROLE_KEY`. In older Supabase projects those
+keys may be labeled `anon` and `service_role` instead.
 
 For a hosted deployment, set these locally (never commit their values):
 
