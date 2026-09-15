@@ -36,3 +36,12 @@ After completing and testing a requested feature, commit only the task-related c
 ## Configuration & Secrets
 
 Do not read, commit, or edit `.local.env` or other `.env` files. Document required keys and ask the maintainer to set values such as `OLLAMA_BASE_URL`, `LLM_MODEL`, `EXAM_BUILDER_ENABLED`, and provider API keys locally.
+
+## Supabase Local Development
+
+Keep the Supabase CLI project in `supabase/` portable and committed, including
+migrations and `config.toml`; never commit generated state under `supabase/.temp/`,
+`supabase/.branches/`, or signing keys. Use `npx supabase start` and
+`npx supabase status` for local setup. Browser code may use only the public
+Supabase URL and publishable key from `frontend/.env.local`; secret/service keys
+belong exclusively in the backend `.local.env`.

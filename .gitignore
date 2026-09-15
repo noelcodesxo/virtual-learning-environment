@@ -12,3 +12,8 @@ wheels/
 # Next.js frontend
 frontend/node_modules/
 frontend/.next/
+
+# Supabase CLI generated state and signing material
+supabase/.temp/
+supabase/.branches/
+supabase/signing_keys.json
