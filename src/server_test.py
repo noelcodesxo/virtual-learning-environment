@@ -48,7 +48,9 @@ class _StateRepository:
     def list_threads(self, user_id): return list(self.state["threads"].values())
     def get_messages(self, user_id, thread_id): return []
     def create_exam(self, user_id, exam): self.state["exams"][exam["id"]] = exam
-    def list_exams(self, user_id): return sorted(self.state["exams"].values(), key=lambda exam: exam["created_at"], reverse=True)
+    def list_exams(self, user_id):
+        exams = sorted(self.state["exams"].values(), key=lambda exam: exam["created_at"], reverse=True)
+        return [{**exam, "total": len(exam["questions"])} for exam in exams]
     def get_exam(self, user_id, exam_id): return self.state["exams"].get(exam_id)
     def grade_exam(self, user_id, exam_id, answers):
         exam = self.get_exam(user_id, exam_id)

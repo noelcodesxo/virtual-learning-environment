@@ -11,7 +11,9 @@ Supabase redirect allowlist.
 The portable Supabase CLI configuration and migrations are committed in
 `supabase/`; generated state, signing material, and local env files are not.
 
-1. Run `npx supabase start` from the repository root.
+1. Run `npx supabase start` from the repository root. This project uses ports
+   `54331` (API), `54332` (database), and `54333` (Studio) to avoid colliding
+   with the local workout tracker.
 2. Copy `frontend/.env.example` to `frontend/.env.local`.
 3. Copy `.local.env.example` to `.local.env`.
 4. Run `npx supabase status`, then copy its API URL, publishable key, anon key,

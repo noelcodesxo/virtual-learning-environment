@@ -418,11 +418,11 @@ def list_exams(user: CurrentUser = Depends(require_current_user)):
                 book=e["book"],
                 chapter=e["chapter"],
                 created_at=e["created_at"],
-                total=len(e["questions"]),
+                total=e["total"],
                 score=e["score"],
                 generated_from=e.get("generated_from", "form"),
                 description=e.get("description"),
-                requested_question_count=e.get("requested_question_count", len(e["questions"])),
+                requested_question_count=e.get("requested_question_count", e["total"]),
             )
             for e in exams
         ]

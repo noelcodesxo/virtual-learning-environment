@@ -59,7 +59,17 @@ class SupabaseRepository:
         self._request("exam_answer_keys", "POST", answer_keys)
 
     def list_exams(self, user_id: str) -> list[dict]:
-        return self._request(f"exams?user_id=eq.{urllib.parse.quote(user_id)}&select=*&order=created_at.desc")
+        exams = self._request(f"exams?user_id=eq.{urllib.parse.quote(user_id)}&select=*&order=created_at.desc")
+        if not exams:
+            return []
+        ids = ",".join(exam["id"] for exam in exams)
+        questions = self._request(f"exam_questions?exam_id=in.({ids})&select=exam_id")
+        totals = {exam["id"]: 0 for exam in exams}
+        for question in questions:
+            totals[question["exam_id"]] += 1
+        for exam in exams:
+            exam["total"] = totals[exam["id"]]
+        return exams
 
     def get_exam(self, user_id: str, exam_id: str) -> dict | None:
         rows = self._request(f"exams?id=eq.{urllib.parse.quote(exam_id)}&user_id=eq.{urllib.parse.quote(user_id)}&select=*")
