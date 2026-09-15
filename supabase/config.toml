@@ -35,6 +35,6 @@ enable_signup = true
 
 # Set the client ID and secret in .local.env to enable local Google sign-in.
 [auth.external.google]
-enabled = false
+enabled = true
 client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
 secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET)"
