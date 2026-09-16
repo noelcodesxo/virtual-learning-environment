@@ -2,8 +2,6 @@
 
 A small, single-user learning environment for asking questions about the material you choose. Add your own EPUB books, articles, or papers, then use the web interface to search and chat with a local language model grounded in that material.
 
-This project is intentionally simple: it has no accounts, shared workspaces, or hosted model dependency. Your documents and model stay on your machine.
-
 ## What you need
 
 - [Python](https://www.python.org/) 3.13 or later
@@ -11,7 +9,7 @@ This project is intentionally simple: it has no accounts, shared workspaces, or 
 - [Ollama](https://ollama.com/) running locally
 - Node.js 22 or later and npm (for the web interface)
 
-Docker Desktop and Docker Compose are optional if you prefer to run the backend and frontend in containers.
+Docker Desktop and Docker Compose are recommended to run the backend and frontend in containers. However, you can run the frontend and backend separately if you choose to.
 
 ## Run locally
 
@@ -30,7 +28,7 @@ Docker Desktop and Docker Compose are optional if you prefer to run the backend 
    ollama serve
    ```
 
-   If Ollama is already running as a desktop application or service, only the `ollama pull` command is needed.
+To change the model you use the `LLM_MODEL` environment variable.
 
 3. Put the EPUB files you want to study in `src/resources/`. The backend creates or refreshes the local `index.json` search index when it starts. Existing EPUB files in that directory are examples and can be replaced with your own material.
 
@@ -61,6 +59,18 @@ docker compose up --watch
 ```
 
 Then open [http://localhost:3000](http://localhost:3000). The compose configuration connects the backend container to Ollama on the host at `http://host.docker.internal:11434`.
+
+## Study modes
+
+### Chat
+
+Use **Chat** when you want to explore your library or get help understanding a topic. It searches the local index for the passages most relevant to your question, sends those passages and your question to your local Ollama model, and shows the sources alongside its answer. This is the best mode for open-ended questions such as “Explain this concept” or “What does this book say about …?”
+
+### Exams
+
+Use **Exams** when you want to test your understanding of a specific book chapter. Choose a book and chapter, or describe the topic you want to be tested on. The exam builder reads the full selected chapter and generates a multiple-choice exam; after you submit it, it scores your answers and explains the correct choices.
+
+Exam generation is optional and disabled by default. The current implementation uses an OpenRouter-compatible model for selecting a chapter from a description and generating the exam, so enabling it requires `EXAM_BUILDER_ENABLED=true` and an `OPENROUTER_API_KEY`. You can choose the exam model with `EXAM_MODEL`; its default is `anthropic/claude-3.5-sonnet`. Chat remains local and uses Ollama.
 
 ## How it works
 
