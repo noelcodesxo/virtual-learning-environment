@@ -2,6 +2,16 @@
 
 A small, single-user learning environment for asking questions about the material you choose. Add your own EPUB books, articles, or papers, then use the web interface to search and chat with a local language model grounded in that material.
 
+## Table of contents
+
+- [Study modes](#study-modes)
+  - [Chat](#chat)
+  - [Exams](#exams)
+- [What you need](#what-you-need)
+- [Run locally](#run-locally)
+- [Run with Docker Compose](#run-with-docker-compose)
+- [How it works](#how-it-works)
+
 ## What you need
 
 - [Python](https://www.python.org/) 3.13 or later
@@ -36,8 +46,6 @@ Docker Desktop and Docker Compose are recommended to run the backend and fronten
    ollama pull qwen3:8b
    ollama serve
    ```
-
-To change the model you use the `LLM_MODEL` environment variable.
 
 4. Put the EPUB files you want to study in `src/resources/`. The backend creates or refreshes the local `index.json` search index when it starts. Existing EPUB files in that directory are examples and can be replaced with your own material.
 
