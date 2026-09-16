@@ -16,6 +16,10 @@ export const api = {
   chat: (query: string, model: string) => request<ChatResponse>("/chat", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, model }),
   }),
+  uploadLibraryFile: (file: File) => request<{ filename: string; indexed_chunks: number }>(
+    `/library/upload?filename=${encodeURIComponent(file.name)}`,
+    { method: "POST", headers: { "Content-Type": file.type || "application/epub+zip" }, body: file },
+  ),
   resolveDescription: (description: string) => request<{ book: string; chapter: string }>("/exams/resolve-description", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description }),
   }),

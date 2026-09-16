@@ -47,7 +47,7 @@ Docker Desktop and Docker Compose are recommended to run the backend and fronten
    ollama serve
    ```
 
-4. Put the EPUB files you want to study in `src/resources/`. The backend creates or refreshes the local `index.json` search index when it starts. Existing EPUB files in that directory are examples and can be replaced with your own material.
+4. Add the EPUB files you want to study. You can place them in `src/resources/` before starting the app, or use the **Add EPUB** button in the Chat sidebar after it is running. Uploads are limited to 50 MB and refresh the local `index.json` search index automatically. Existing EPUB files in `src/resources/` are examples and can be replaced with your own material.
 
 5. Start the API in one terminal:
 

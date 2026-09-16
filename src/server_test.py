@@ -1,5 +1,6 @@
 import json
 import urllib.error
+from asyncio import run
 
 import pytest
 from fastapi import HTTPException
@@ -37,6 +38,16 @@ class _FakeClient:
 
     def chat(self, messages):
         return self._answer
+
+
+class _FakeUploadRequest:
+    def __init__(self, chunks, headers=None):
+        self._chunks = chunks
+        self.headers = headers or {}
+
+    async def stream(self):
+        for chunk in self._chunks:
+            yield chunk
 
 
 def test_list_models_returns_sorted_model_names(monkeypatch):
@@ -89,6 +100,37 @@ def test_chat_rejects_empty_query():
         chat(ChatRequest(query="   "))
 
     assert exc_info.value.status_code == 400
+
+
+def test_upload_library_file_saves_an_epub_and_refreshes_the_index(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "RESOURCES_DIR", tmp_path)
+    indexed = [{"book": "Uploaded", "text": "chunk"}]
+    monkeypatch.setattr(server, "build_index", lambda: indexed)
+    server.state["index"] = []
+
+    response = run(server.upload_library_file(_FakeUploadRequest([b"epub bytes"]), "uploaded.epub"))
+
+    assert response == server.UploadResponse(filename="uploaded.epub", indexed_chunks=1)
+    assert (tmp_path / "uploaded.epub").read_bytes() == b"epub bytes"
+    assert server.state["index"] == indexed
+
+
+def test_upload_library_file_rejects_non_epub_files():
+    with pytest.raises(HTTPException) as exc_info:
+        run(server.upload_library_file(_FakeUploadRequest([b"paper"]), "paper.pdf"))
+
+    assert exc_info.value.status_code == 415
+
+
+def test_upload_library_file_removes_invalid_epub(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "RESOURCES_DIR", tmp_path)
+    monkeypatch.setattr(server, "build_index", lambda: (_ for _ in ()).throw(ValueError("invalid epub")))
+
+    with pytest.raises(HTTPException) as exc_info:
+        run(server.upload_library_file(_FakeUploadRequest([b"not an epub"]), "bad.epub"))
+
+    assert exc_info.value.status_code == 422
+    assert not (tmp_path / "bad.epub").exists()
 
 
 def test_get_features_reflects_the_env_flag(monkeypatch):

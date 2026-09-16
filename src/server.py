@@ -3,13 +3,14 @@ import os
 import urllib.error
 import urllib.request
 import uuid
+from asyncio import Lock
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
 from ebooklib import epub
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -35,8 +36,10 @@ DEFAULT_MODEL = os.environ.get("LLM_MODEL", "qwen3:8b")
 # index or the chat retriever, so it can stay off while it's still new.
 EXAM_BUILDER_ENABLED = os.environ.get("EXAM_BUILDER_ENABLED", "false").lower() == "true"
 EXAM_MODEL = os.environ.get("EXAM_MODEL", "anthropic/claude-3.5-sonnet")
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 state: dict = {}
+library_lock = Lock()
 
 
 def build_index() -> list[dict]:
@@ -96,6 +99,11 @@ class ModelsResponse(BaseModel):
     models: list[str]
 
 
+class UploadResponse(BaseModel):
+    filename: str
+    indexed_chunks: int
+
+
 def fetch_ollama_models(base_url: str) -> list[str]:
     request = urllib.request.Request(f"{base_url.rstrip('/')}/api/tags")
     try:
@@ -130,6 +138,63 @@ def chat(request: ChatRequest):
         for r in results
     ]
     return ChatResponse(answer=answer, sources=sources)
+
+
+def _safe_epub_filename(filename: str) -> str:
+    candidate = Path(filename).name
+    if not filename or candidate != filename or candidate in {".", ".."}:
+        raise HTTPException(status_code=400, detail="A valid filename is required")
+    if Path(candidate).suffix.lower() != ".epub":
+        raise HTTPException(status_code=415, detail="Only EPUB files are supported")
+    return candidate
+
+
+def _available_resource_path(filename: str) -> Path:
+    destination = RESOURCES_DIR / filename
+    stem = destination.stem
+    suffix = destination.suffix
+    number = 2
+    while destination.exists():
+        destination = RESOURCES_DIR / f"{stem}-{number}{suffix}"
+        number += 1
+    return destination
+
+
+@app.post("/library/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_library_file(request: Request, filename: str):
+    safe_filename = _safe_epub_filename(filename)
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File must be 50 MB or smaller")
+
+    RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
+    async with library_lock:
+        temporary_path = RESOURCES_DIR / f".{uuid.uuid4().hex}.upload"
+        destination: Path | None = None
+        size = 0
+        try:
+            with temporary_path.open("wb") as upload:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > MAX_UPLOAD_BYTES:
+                        raise HTTPException(status_code=413, detail="File must be 50 MB or smaller")
+                    upload.write(chunk)
+
+            if size == 0:
+                raise HTTPException(status_code=400, detail="The uploaded file is empty")
+
+            destination = _available_resource_path(safe_filename)
+            temporary_path.replace(destination)
+            try:
+                indexed = build_index()
+            except Exception as exc:
+                destination.unlink(missing_ok=True)
+                raise HTTPException(status_code=422, detail="Could not read this EPUB file") from exc
+
+            state["index"] = indexed
+            return UploadResponse(filename=destination.name, indexed_chunks=len(indexed))
+        finally:
+            temporary_path.unlink(missing_ok=True)
 
 
 class FeaturesResponse(BaseModel):

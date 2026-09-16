@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import type { Source } from "../lib/types";
 
@@ -18,6 +18,9 @@ export function ChatWorkspace() {
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
+  const uploadInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.models().then(({ models: available }) => {
@@ -48,6 +51,21 @@ export function ChatWorkspace() {
     } finally { setIsSending(false); }
   }
 
+  async function uploadFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file || isUploading) return;
+    setIsUploading(true); setUploadStatus("");
+    try {
+      const uploaded = await api.uploadLibraryFile(file);
+      setUploadStatus(`Added ${uploaded.filename} and refreshed the library.`);
+    } catch (error) {
+      setUploadStatus(error instanceof Error ? error.message : "Could not add the file.");
+    } finally {
+      setIsUploading(false);
+      if (uploadInput.current) uploadInput.current.value = "";
+    }
+  }
+
   return <>
     <header className="topbar"><span className="chat-title">{currentThread?.title ?? "New chat"}</span><div className="model-picker">
       <span className={`status-dot${modelsError ? " offline" : ""}`} aria-hidden="true" />
@@ -57,7 +75,7 @@ export function ChatWorkspace() {
       </select>
     </div></header>
     <div className="workspace">
-      <aside className="workspace-sidebar"><button className="new-chat" type="button" onClick={() => setCurrentThreadId(null)}>＋ <span>New chat</span></button><div className="section-label">Recent</div>
+      <aside className="workspace-sidebar"><button className="new-chat" type="button" onClick={() => setCurrentThreadId(null)}>＋ <span>New chat</span></button><label className="upload-library"><input ref={uploadInput} type="file" accept=".epub,application/epub+zip" onChange={uploadFile} disabled={isUploading} /><span>{isUploading ? "Adding EPUB…" : "Add EPUB"}</span></label><p className="upload-status" role="status">{uploadStatus}</p><div className="section-label">Recent</div>
         <div className="recent-list">{threads.map((thread) => <button key={thread.id} type="button" className={`recent-item${thread.id === currentThreadId ? " active" : ""}`} aria-current={thread.id === currentThreadId ? "page" : undefined} onClick={() => setCurrentThreadId(thread.id)}>{thread.title}</button>)}</div>
       </aside>
       <section className="chat-panel" aria-label="Chat"><div className="conversation"><div className="thread" role="log" aria-live="polite" aria-relevant="additions text">
