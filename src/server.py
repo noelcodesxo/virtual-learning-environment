@@ -159,12 +159,6 @@ async def upload_library_file(request: Request, filename: str):
     RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
     async with library_lock:
         destination = RESOURCES_DIR / safe_filename
-        if destination.exists():
-            raise HTTPException(
-                status_code=409,
-                detail=f"A book named {safe_filename} already exists in the library.",
-            )
-
         temporary_path = RESOURCES_DIR / f".{uuid.uuid4().hex}.upload"
         size = 0
         try:
@@ -177,6 +171,15 @@ async def upload_library_file(request: Request, filename: str):
 
             if size == 0:
                 raise HTTPException(status_code=400, detail="The uploaded file is empty")
+
+            # Finish reading the incoming upload before replying. Returning while
+            # the client is still streaming a duplicate EPUB can make browsers
+            # report a network error instead of the 409 response.
+            if destination.exists():
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"A book named {safe_filename} already exists in the library.",
+                )
 
             temporary_path.replace(destination)
             try:

@@ -44,8 +44,10 @@ class _FakeUploadRequest:
     def __init__(self, chunks, headers=None):
         self._chunks = chunks
         self.headers = headers or {}
+        self.was_streamed = False
 
     async def stream(self):
+        self.was_streamed = True
         for chunk in self._chunks:
             yield chunk
 
@@ -126,12 +128,14 @@ def test_upload_library_file_rejects_a_duplicate_filename(monkeypatch, tmp_path)
     monkeypatch.setattr(server, "RESOURCES_DIR", tmp_path)
     (tmp_path / "uploaded.epub").write_bytes(b"existing epub")
     monkeypatch.setattr(server, "build_index", lambda: pytest.fail("should not rebuild the index"))
+    request = _FakeUploadRequest([b"new epub"])
 
     with pytest.raises(HTTPException) as exc_info:
-        run(server.upload_library_file(_FakeUploadRequest([b"new epub"]), "uploaded.epub"))
+        run(server.upload_library_file(request, "uploaded.epub"))
 
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == "A book named uploaded.epub already exists in the library."
+    assert request.was_streamed
     assert (tmp_path / "uploaded.epub").read_bytes() == b"existing epub"
 
 
