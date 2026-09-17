@@ -65,7 +65,7 @@ export function LibraryWorkspace() {
     {!isLoading && !error && documents.length > 0 ? <div className="document-list">{documents.map((document) => <article className="document-card" key={document.filename}>
       <div className="document-main"><span className="format-badge">{document.format.toUpperCase()}</span><div><h2>{document.title}</h2><p>{document.chapters.length} {document.chapters.length === 1 ? "chapter" : "chapters"} · Ready</p><span className="document-filename">{document.filename}</span></div></div>
       <button className="text-action" type="button" aria-expanded={expanded === document.filename} onClick={() => setExpanded((current) => current === document.filename ? null : document.filename)}>{expanded === document.filename ? "Hide chapters" : "View chapters"}</button>
-      {expanded === document.filename ? <ol className="chapter-list">{document.chapters.map((chapter) => <li key={chapter}>{chapter}</li>)}</ol> : null}
+      {expanded === document.filename ? <ul className="chapter-list">{document.chapters.map((chapter) => <li key={chapter}>{chapter}</li>)}</ul> : null}
     </article>)}</div> : null}
   </section>;
 }
