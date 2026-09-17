@@ -43,9 +43,26 @@ class PdfExtractor:
 
     def extract_chunks(self, path: Path) -> list[dict]:
         chunker = Chunker()
-        for page_number, page in enumerate(PdfReader(str(path)).pages, start=1):
+        reader = PdfReader(str(path))
+        outline_entries = self._outline_entries(reader)
+        chapter = None
+        section = None
+        for page_number, page in enumerate(reader.pages):
+            for entry_page, title, depth in outline_entries:
+                if entry_page != page_number:
+                    continue
+                if depth == 0:
+                    chapter = title
+                    section = None
+                elif depth == 1:
+                    section = title
+
             text = page.extract_text() or ""
-            chunker.chunker_processer(text, chapter=f"Page {page_number}", section=None)
+            chunker.chunker_processer(
+                text,
+                chapter=chapter or f"Page {page_number + 1}",
+                section=section,
+            )
 
         if not chunker.chunks:
             raise ValueError("The PDF does not contain extractable text")
@@ -55,4 +72,32 @@ class PdfExtractor:
         return chunker.chunks
 
     def catalog(self, path: Path) -> dict:
-        return {"title": path.stem, "chapters": [ENTIRE_DOCUMENT_CHAPTER]}
+        reader = PdfReader(str(path))
+        chapters = [title for _, title, depth in self._outline_entries(reader) if depth == 0]
+        return {
+            "title": path.stem,
+            "chapters": list(dict.fromkeys(chapters)) or [ENTIRE_DOCUMENT_CHAPTER],
+        }
+
+    @staticmethod
+    def _outline_entries(reader) -> list[tuple[int, str, int]]:
+        entries = []
+
+        def walk(nodes, depth=0):
+            for node in nodes:
+                if isinstance(node, list):
+                    walk(node, depth + 1)
+                    continue
+                title = getattr(node, "title", None)
+                try:
+                    page_number = reader.get_destination_page_number(node)
+                except Exception:
+                    continue
+                if title and page_number is not None and page_number >= 0:
+                    entries.append((page_number, str(title), depth))
+
+        try:
+            walk(reader.outline)
+        except Exception:
+            return []
+        return entries
