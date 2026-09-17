@@ -39,3 +39,11 @@ def test_pdf_extractor_rejects_documents_without_extractable_text(monkeypatch, t
 
     with pytest.raises(ValueError, match="extractable text"):
         PdfExtractor().extract_chunks(Path(tmp_path / "scan.pdf"))
+
+
+def test_pdf_catalog_does_not_open_the_pdf(monkeypatch, tmp_path):
+    monkeypatch.setattr(document_extractors, "PdfReader", lambda path: pytest.fail("should not open PDF"))
+
+    catalog = PdfExtractor().catalog(tmp_path / "research-paper.pdf")
+
+    assert catalog == {"title": "research-paper", "chapters": ["Entire document"]}

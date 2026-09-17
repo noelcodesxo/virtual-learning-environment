@@ -13,12 +13,26 @@ class _FakeExtractor:
         self.chunks = chunks or [{"book": "Uploaded", "chapter": None, "section": None, "text": "source text"}]
         self.error = error
         self.paths = []
+        self.catalog_paths = []
 
     def extract_chunks(self, path: Path) -> list[dict]:
         self.paths.append(path)
         if self.error:
             raise self.error
         return [chunk.copy() for chunk in self.chunks]
+
+    def catalog(self, path: Path) -> dict:
+        self.catalog_paths.append(path)
+        title = self.chunks[0].get("book") or path.stem
+        if ".epub" in self.extensions:
+            chapters = list(dict.fromkeys(
+                chunk["chapter"]
+                for chunk in self.chunks
+                if chunk.get("chapter") and chunk["chapter"].startswith(tuple(str(i) + "." for i in range(10)))
+            ))
+        else:
+            chapters = ["Entire document"]
+        return {"title": title, "chapters": chapters}
 
 
 class _TextExtractor(_FakeExtractor):
@@ -101,6 +115,17 @@ def test_list_books_and_load_chapter_text_support_full_document_exams(tmp_path):
 
     assert service.list_books() == [{"title": "Research paper", "chapters": ["Entire document"]}]
     assert service.load_chapter_text("Research paper", "Entire document") == "first page\n\nsecond page"
+
+
+def test_list_books_uses_lightweight_catalogs_without_extracting_document_text(tmp_path):
+    pdf_extractor = _PdfExtractor(error=AssertionError("should not extract PDF text"))
+    service = LibraryService(tmp_path / "resources", tmp_path / "index.json", [pdf_extractor])
+    service.resources_dir.mkdir()
+    (service.resources_dir / "research.pdf").write_bytes(b"pdf")
+
+    assert service.list_books() == [{"title": "Uploaded", "chapters": ["Entire document"]}]
+    assert pdf_extractor.paths == []
+    assert pdf_extractor.catalog_paths == [service.resources_dir / "research.pdf"]
 
 
 def test_load_exam_text_uses_bounded_evenly_distributed_document_excerpts(tmp_path):

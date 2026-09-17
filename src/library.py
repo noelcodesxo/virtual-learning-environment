@@ -5,14 +5,12 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
-from document_extractors import DocumentExtractor, EpubExtractor, PdfExtractor
+from document_extractors import DocumentExtractor, ENTIRE_DOCUMENT_CHAPTER, EpubExtractor, PdfExtractor
 from indexer import Indexer
 from preprocessor import PreProcessor
 
 
 DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
-CHAPTER_TITLE_RE = re.compile(r"^\d+\.")
-ENTIRE_DOCUMENT_CHAPTER = "Entire document"
 EXAM_CHUNK_SIZE = 1600
 EXAM_CHUNK_OVERLAP = 200
 MAX_EXAM_SOURCE_CHUNKS = 12
@@ -62,18 +60,7 @@ class LibraryService:
         return indexed
 
     def list_books(self) -> list[dict]:
-        books = []
-        for path in self._resource_paths():
-            chunks = self._extractors[path.suffix.lower()].extract_chunks(path)
-            if not chunks:
-                continue
-            title = chunks[0].get("book") or path.stem
-            if path.suffix.lower() == ".epub":
-                chapters = self._epub_chapters(chunks)
-            else:
-                chapters = [ENTIRE_DOCUMENT_CHAPTER]
-            books.append({"title": title, "chapters": chapters})
-        return books
+        return [self._extractors[path.suffix.lower()].catalog(path) for path in self._resource_paths()]
 
     def load_chapter_text(self, book_title: str, chapter_title: str) -> str:
         return "\n\n".join(chunk["text"] for chunk in self._source_chunks(book_title, chapter_title))
@@ -166,14 +153,6 @@ class LibraryService:
             for path in self.resources_dir.iterdir()
             if path.is_file() and path.suffix.lower() in self._extractors
         )
-
-    @staticmethod
-    def _epub_chapters(chunks: list[dict]) -> list[str]:
-        return list(dict.fromkeys(
-            chunk["chapter"]
-            for chunk in chunks
-            if chunk.get("chapter") and CHAPTER_TITLE_RE.match(chunk["chapter"])
-        ))
 
     @staticmethod
     def _split_exam_text(text: str) -> list[str]:
