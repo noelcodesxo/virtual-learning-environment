@@ -81,6 +81,22 @@ class UploadResponse(BaseModel):
     indexed_chunks: int
 
 
+class DeleteResponse(BaseModel):
+    filename: str
+    indexed_chunks: int
+
+
+class LibraryDocument(BaseModel):
+    title: str
+    filename: str
+    format: str
+    chapters: list[str]
+
+
+class LibraryResponse(BaseModel):
+    documents: list[LibraryDocument]
+
+
 def fetch_ollama_models(base_url: str) -> list[str]:
     request = urllib.request.Request(f"{base_url.rstrip('/')}/api/tags")
     try:
@@ -126,6 +142,22 @@ async def upload_library_file(request: Request, filename: str):
 
     state["index"] = result.indexed
     return UploadResponse(filename=result.filename, indexed_chunks=len(result.indexed))
+
+
+@app.get("/library", response_model=LibraryResponse)
+def list_library_documents():
+    return LibraryResponse(documents=[LibraryDocument(**document) for document in library.list_documents()])
+
+
+@app.delete("/library/{filename}", response_model=DeleteResponse)
+async def delete_library_file(filename: str):
+    try:
+        result = await library.delete(filename)
+    except LibraryError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    state["index"] = result.indexed
+    return DeleteResponse(filename=result.filename, indexed_chunks=len(result.indexed))
 
 
 class FeaturesResponse(BaseModel):

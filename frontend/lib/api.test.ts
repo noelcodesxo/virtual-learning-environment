@@ -26,4 +26,20 @@ describe("api client", () => {
     await expect(api.uploadLibraryFile(file)).resolves.toEqual({ filename: "book.epub", indexed_chunks: 12 });
     expect(fetchMock).toHaveBeenCalledWith("/api/library/upload?filename=book.epub", expect.objectContaining({ method: "POST", body: file }));
   });
+
+  it("loads the document catalog through the API rewrite", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ documents: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.library()).resolves.toEqual({ documents: [] });
+    expect(fetchMock).toHaveBeenCalledWith("/api/library", undefined);
+  });
+
+  it("deletes document files through the API rewrite", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ filename: "book.epub", indexed_chunks: 0 }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.deleteLibraryFile("book.epub")).resolves.toEqual({ filename: "book.epub", indexed_chunks: 0 });
+    expect(fetchMock).toHaveBeenCalledWith("/api/library/book.epub", { method: "DELETE" });
+  });
 });

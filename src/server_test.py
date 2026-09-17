@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 import server
-from library import LibraryError, UploadResult
+from library import DeleteResult, LibraryError, UploadResult
 from server import ChatRequest, chat, list_models
 
 
@@ -56,9 +56,19 @@ class _FakeLibrary:
         self.result = result
         self.error = error
         self.uploaded = None
+        self.deleted = None
 
     async def upload(self, filename, chunks, content_length):
         self.uploaded = (filename, [chunk async for chunk in chunks], content_length)
+        if self.error:
+            raise self.error
+        return self.result
+
+    def list_documents(self):
+        return [{"title": "Research paper", "filename": "research.pdf", "format": "pdf", "chapters": ["Entire document"]}]
+
+    async def delete(self, filename):
+        self.deleted = filename
         if self.error:
             raise self.error
         return self.result
@@ -139,12 +149,46 @@ def test_upload_library_file_maps_library_errors_to_http_errors(monkeypatch):
     assert exc_info.value.detail == "duplicate"
 
 
+def test_delete_library_file_delegates_to_the_library_service(monkeypatch):
+    indexed = [{"book": "Remaining", "text": "chunk"}]
+    fake_library = _FakeLibrary(DeleteResult(filename="uploaded.epub", indexed=indexed))
+    monkeypatch.setattr(server, "library", fake_library)
+    server.state["index"] = []
+
+    response = run(server.delete_library_file("uploaded.epub"))
+
+    assert response == server.DeleteResponse(filename="uploaded.epub", indexed_chunks=1)
+    assert fake_library.deleted == "uploaded.epub"
+    assert server.state["index"] == indexed
+
+
+def test_delete_library_file_maps_library_errors_to_http_errors(monkeypatch):
+    monkeypatch.setattr(server, "library", _FakeLibrary(error=LibraryError(404, "missing")))
+
+    with pytest.raises(HTTPException) as exc_info:
+        run(server.delete_library_file("missing.epub"))
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "missing"
+
+
 def test_get_features_reflects_the_env_flag(monkeypatch):
     monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
     assert server.get_features().exam_builder is True
 
     monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", False)
     assert server.get_features().exam_builder is False
+
+
+def test_list_library_documents_is_available_when_exam_builder_is_disabled(monkeypatch):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", False)
+    monkeypatch.setattr(server, "library", _FakeLibrary())
+
+    response = server.list_library_documents()
+
+    assert response.documents == [server.LibraryDocument(
+        title="Research paper", filename="research.pdf", format="pdf", chapters=["Entire document"]
+    )]
 
 
 class _FakeChapterLoader:

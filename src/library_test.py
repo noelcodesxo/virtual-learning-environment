@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from library import LibraryError, LibraryService
+from library import DeleteResult, LibraryError, LibraryService
 
 
 class _FakeExtractor:
@@ -138,6 +138,22 @@ def test_list_books_caches_unchanged_document_catalogs(tmp_path):
     assert extractor.catalog_paths == [service.resources_dir / "book.epub"]
 
 
+def test_list_documents_includes_filename_and_format_without_extracting_text(tmp_path):
+    epub_extractor = _FakeExtractor()
+    pdf_extractor = _PdfExtractor()
+    service = LibraryService(tmp_path / "resources", tmp_path / "index.json", [epub_extractor, pdf_extractor])
+    service.resources_dir.mkdir()
+    (service.resources_dir / "course.epub").write_bytes(b"epub")
+    (service.resources_dir / "paper.pdf").write_bytes(b"pdf")
+
+    assert service.list_documents() == [
+        {"title": "Uploaded", "chapters": [], "filename": "course.epub", "format": "epub"},
+        {"title": "Uploaded", "chapters": ["Entire document"], "filename": "paper.pdf", "format": "pdf"},
+    ]
+    assert epub_extractor.paths == []
+    assert pdf_extractor.paths == []
+
+
 def test_load_exam_text_uses_bounded_evenly_distributed_document_excerpts(tmp_path):
     pdf_extractor = _PdfExtractor([
         {"book": "Research paper", "chapter": f"Page {number}", "section": None, "text": f"page {number} " + "word " * 280}
@@ -223,3 +239,43 @@ def test_upload_rejects_empty_and_oversized_documents(tmp_path):
     assert empty_error.value.status_code == 400
     assert size_error.value.status_code == 413
     assert not list((tmp_path / "resources").glob(".*.upload"))
+
+
+def test_delete_removes_a_document_and_refreshes_the_index(monkeypatch, tmp_path):
+    service = _service(tmp_path)
+    service.resources_dir.mkdir()
+    document = service.resources_dir / "uploaded.epub"
+    document.write_bytes(b"epub bytes")
+    indexed = [{"book": "Remaining", "text": "chunk"}]
+    monkeypatch.setattr(service, "build_index", lambda: indexed)
+
+    result = run(service.delete("uploaded.epub"))
+
+    assert result == DeleteResult(filename="uploaded.epub", indexed=indexed)
+    assert not document.exists()
+
+
+def test_delete_rejects_missing_or_unsafe_filenames(tmp_path):
+    service = _service(tmp_path)
+
+    with pytest.raises(LibraryError, match="was not found") as missing_error:
+        run(service.delete("missing.epub"))
+    with pytest.raises(LibraryError, match="valid filename") as unsafe_error:
+        run(service.delete("../book.epub"))
+
+    assert missing_error.value.status_code == 404
+    assert unsafe_error.value.status_code == 400
+
+
+def test_delete_restores_a_document_when_reindexing_fails(monkeypatch, tmp_path):
+    service = _service(tmp_path)
+    service.resources_dir.mkdir()
+    document = service.resources_dir / "uploaded.epub"
+    document.write_bytes(b"epub bytes")
+    monkeypatch.setattr(service, "build_index", lambda: (_ for _ in ()).throw(ValueError("index error")))
+
+    with pytest.raises(LibraryError, match="Could not remove") as exc_info:
+        run(service.delete("uploaded.epub"))
+
+    assert exc_info.value.status_code == 500
+    assert document.read_bytes() == b"epub bytes"

@@ -13,3 +13,6 @@ wheels/
 # Next.js frontend
 frontend/node_modules/
 frontend/.next/
+
+# Local UI mockups
+docs/ui-mocks/

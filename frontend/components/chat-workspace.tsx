@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import type { Source } from "../lib/types";
 
@@ -18,9 +18,6 @@ export function ChatWorkspace() {
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState("");
-  const uploadInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.models().then(({ models: available }) => {
@@ -51,40 +48,20 @@ export function ChatWorkspace() {
     } finally { setIsSending(false); }
   }
 
-  async function uploadFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file || isUploading) return;
-    setIsUploading(true); setUploadStatus("");
-    try {
-      const uploaded = await api.uploadLibraryFile(file);
-      setUploadStatus(`Added ${uploaded.filename} and refreshed the library.`);
-    } catch (error) {
-      setUploadStatus(error instanceof Error ? error.message : "Could not add the file.");
-    } finally {
-      setIsUploading(false);
-      if (uploadInput.current) uploadInput.current.value = "";
-    }
-  }
-
   return <>
-    <header className="topbar"><span className="chat-title">{currentThread?.title ?? "New chat"}</span><div className="model-picker">
+    <header className="topbar"><div className="chat-header-controls"><span className="chat-title">{currentThread?.title ?? "New chat"}</span>{threads.length ? <select className="thread-picker" aria-label="Recent chats" value={currentThreadId ?? ""} onChange={(event) => setCurrentThreadId(event.target.value || null)}><option value="">New chat</option>{threads.map((thread) => <option value={thread.id} key={thread.id}>{thread.title}</option>)}</select> : null}<button className="header-action" type="button" onClick={() => setCurrentThreadId(null)}>New chat</button></div><div className="model-picker">
       <span className={`status-dot${modelsError ? " offline" : ""}`} aria-hidden="true" />
       <span className="sr-only">{modelsError ? "Model server unavailable" : "Model server connected"}</span>
       <select className="model-select" value={model} onChange={(event) => setModel(event.target.value)} disabled={modelsError || models.length === 0}>
         {models.length ? models.map((item) => <option key={item}>{item}</option>) : <option>{modelsError ? "Model server unavailable" : "Loading models…"}</option>}
       </select>
     </div></header>
-    <div className="workspace">
-      <aside className="workspace-sidebar"><button className="new-chat" type="button" onClick={() => setCurrentThreadId(null)}>＋ <span>New chat</span></button><label className="upload-library"><input ref={uploadInput} type="file" accept=".epub,application/epub+zip,.pdf,application/pdf" onChange={uploadFile} disabled={isUploading} /><span>{isUploading ? "Adding document…" : "Add document"}</span></label><p className="upload-status" role="status">{uploadStatus}</p><div className="section-label">Recent</div>
-        <div className="recent-list">{threads.map((thread) => <button key={thread.id} type="button" className={`recent-item${thread.id === currentThreadId ? " active" : ""}`} aria-current={thread.id === currentThreadId ? "page" : undefined} onClick={() => setCurrentThreadId(thread.id)}>{thread.title}</button>)}</div>
-      </aside>
-      <section className="chat-panel" aria-label="Chat"><div className="conversation"><div className="thread" role="log" aria-live="polite" aria-relevant="additions text">
+    <section className="chat-panel" aria-label="Chat"><div className="conversation"><div className="thread" role="log" aria-live="polite" aria-relevant="additions text">
         {!currentThread?.messages.length && <div className="empty-state"><p>Ask a question about the indexed library.</p></div>}
         {currentThread?.messages.map((message, index) => message.role === "user" ? <div className="msg-row user" key={index}><div className="msg-user">{message.content}</div></div> : <div className="msg-assistant" key={index}><div className={`msg-assistant-text${message.error ? " error" : ""}`}>{message.content}</div>{message.sources?.length ? <div className="sources"><span className="sources-label">Sources</span>{message.sources.map((source, sourceIndex) => <span className="source-item" key={sourceIndex}>{sourceLabel(source)}</span>)}</div> : null}</div>)}
         {isSending && <div className="typing" role="status"><span className="sr-only">Thinking…</span><span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" /></div>}
       </div></div>
       <form className="composer" onSubmit={submit}><label className="sr-only" htmlFor="chat-query">Ask a question</label><div className="composer-inner"><input id="chat-query" className="query-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ask a question…" autoComplete="off" /><button className="send-btn" disabled={isSending} aria-label="Send question">→</button></div></form>
-      </section>
-    </div>
+    </section>
   </>;
 }
