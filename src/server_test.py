@@ -122,6 +122,19 @@ def test_upload_library_file_rejects_non_epub_files():
     assert exc_info.value.status_code == 415
 
 
+def test_upload_library_file_rejects_a_duplicate_filename(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "RESOURCES_DIR", tmp_path)
+    (tmp_path / "uploaded.epub").write_bytes(b"existing epub")
+    monkeypatch.setattr(server, "build_index", lambda: pytest.fail("should not rebuild the index"))
+
+    with pytest.raises(HTTPException) as exc_info:
+        run(server.upload_library_file(_FakeUploadRequest([b"new epub"]), "uploaded.epub"))
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "A book named uploaded.epub already exists in the library."
+    assert (tmp_path / "uploaded.epub").read_bytes() == b"existing epub"
+
+
 def test_upload_library_file_removes_invalid_epub(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "RESOURCES_DIR", tmp_path)
     monkeypatch.setattr(server, "build_index", lambda: (_ for _ in ()).throw(ValueError("invalid epub")))

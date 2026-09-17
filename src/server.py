@@ -149,17 +149,6 @@ def _safe_epub_filename(filename: str) -> str:
     return candidate
 
 
-def _available_resource_path(filename: str) -> Path:
-    destination = RESOURCES_DIR / filename
-    stem = destination.stem
-    suffix = destination.suffix
-    number = 2
-    while destination.exists():
-        destination = RESOURCES_DIR / f"{stem}-{number}{suffix}"
-        number += 1
-    return destination
-
-
 @app.post("/library/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_library_file(request: Request, filename: str):
     safe_filename = _safe_epub_filename(filename)
@@ -169,8 +158,14 @@ async def upload_library_file(request: Request, filename: str):
 
     RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
     async with library_lock:
+        destination = RESOURCES_DIR / safe_filename
+        if destination.exists():
+            raise HTTPException(
+                status_code=409,
+                detail=f"A book named {safe_filename} already exists in the library.",
+            )
+
         temporary_path = RESOURCES_DIR / f".{uuid.uuid4().hex}.upload"
-        destination: Path | None = None
         size = 0
         try:
             with temporary_path.open("wb") as upload:
@@ -183,7 +178,6 @@ async def upload_library_file(request: Request, filename: str):
             if size == 0:
                 raise HTTPException(status_code=400, detail="The uploaded file is empty")
 
-            destination = _available_resource_path(safe_filename)
             temporary_path.replace(destination)
             try:
                 indexed = build_index()
