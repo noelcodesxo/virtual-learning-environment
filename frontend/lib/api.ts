@@ -14,26 +14,40 @@ export const api = {
   features: () => request<{ exam_builder: boolean }>("/features"),
   books: () => request<{ books: Book[] }>("/books"),
   library: () => request<{ documents: LibraryDocument[] }>("/library"),
-  chat: (query: string, model: string) => request<ChatResponse>("/chat", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, model }),
-  }),
-  uploadLibraryFile: (file: File) => request<{ filename: string; indexed_chunks: number }>(
-    `/library/upload?filename=${encodeURIComponent(file.name)}`,
-    { method: "POST", headers: { "Content-Type": file.type || "application/epub+zip" }, body: file },
-  ),
-  deleteLibraryFile: (filename: string) => request<{ filename: string; indexed_chunks: number }>(
-    `/library/${encodeURIComponent(filename)}`,
-    { method: "DELETE" },
-  ),
-  resolveDescription: (description: string) => request<{ book: string; chapter: string }>("/exams/resolve-description", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description }),
-  }),
-  generateExam: (body: object) => request<Exam>("/exams", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-  }),
+  chat: (query: string, model: string) =>
+    request<ChatResponse>("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, model }),
+    }),
+  uploadLibraryFile: (file: File) =>
+    request<{ filename: string; indexed_chunks: number }>(`/library/upload?filename=${encodeURIComponent(file.name)}`, {
+      method: "POST",
+      headers: { "Content-Type": file.type || "application/epub+zip" },
+      body: file,
+    }),
+  deleteLibraryFile: (filename: string) =>
+    request<{ filename: string; indexed_chunks: number }>(`/library/${encodeURIComponent(filename)}`, {
+      method: "DELETE",
+    }),
+  resolveDescription: (description: string) =>
+    request<{ book: string; chapter: string }>("/exams/resolve-description", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description }),
+    }),
+  generateExam: (body: object) =>
+    request<Exam>("/exams", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   exams: () => request<{ exams: ExamSummary[] }>("/exams"),
   exam: (id: string) => request<Exam | GradedExam>(`/exams/${id}`),
-  gradeExam: (id: string, answers: Record<number, number>) => request<GradedExam>(`/exams/${id}/grade`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers }),
-  }),
+  gradeExam: (id: string, answers: Record<number, number>) =>
+    request<GradedExam>(`/exams/${id}/grade`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers }),
+    }),
 };
