@@ -3,13 +3,17 @@ from asyncio import Lock
 from collections.abc import AsyncIterable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
-from document_extractors import DocumentExtractor, EpubExtractor
+from document_extractors import DocumentExtractor, ENTIRE_DOCUMENT_CHAPTER, EpubExtractor, PdfExtractor
 from indexer import Indexer
 from preprocessor import PreProcessor
 
 
 DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+EXAM_CHUNK_SIZE = 1600
+EXAM_CHUNK_OVERLAP = 200
+MAX_EXAM_SOURCE_CHUNKS = 12
 
 
 class LibraryError(Exception):
@@ -38,7 +42,8 @@ class LibraryService:
         self.resources_dir = Path(resources_dir)
         self.index_path = Path(index_path)
         self.max_upload_bytes = max_upload_bytes
-        self._extractors = self._build_extractor_registry(extractors or [EpubExtractor()])
+        self._extractors = self._build_extractor_registry(extractors or [EpubExtractor(), PdfExtractor()])
+        self._catalog_cache: dict[Path, tuple[tuple[int, int], dict]] = {}
         self._lock = Lock()
 
     def build_index(self) -> list[dict]:
@@ -54,6 +59,41 @@ class LibraryService:
         indexed = indexer.index(chunks)
         indexer.save(indexed, self.index_path)
         return indexed
+
+    def list_books(self) -> list[dict]:
+        return [self._catalog(path) for path in self._resource_paths()]
+
+    def load_chapter_text(self, book_title: str, chapter_title: str) -> str:
+        return "\n\n".join(chunk["text"] for chunk in self._source_chunks(book_title, chapter_title))
+
+    def load_exam_text(self, book_title: str, chapter_title: str, num_questions: int) -> str:
+        source_text = self._format_exam_source(self._source_chunks(book_title, chapter_title))
+        exam_chunks = self._split_exam_text(source_text)
+        selected_chunks = self._select_evenly_spaced(
+            exam_chunks,
+            min(num_questions, MAX_EXAM_SOURCE_CHUNKS),
+        )
+        return "\n\n".join(
+            f"Source excerpt {index}:\n{chunk}"
+            for index, chunk in enumerate(selected_chunks, start=1)
+        )
+
+    def _source_chunks(self, book_title: str, chapter_title: str) -> list[dict]:
+        for path in self._resource_paths():
+            chunks = self._extractors[path.suffix.lower()].extract_chunks(path)
+            title = chunks[0].get("book") if chunks else path.stem
+            if title != book_title:
+                continue
+
+            if path.suffix.lower() != ".epub" and chapter_title == ENTIRE_DOCUMENT_CHAPTER:
+                return chunks
+
+            selected_chunks = [chunk for chunk in chunks if chunk.get("chapter") == chapter_title]
+            if not selected_chunks:
+                raise ValueError(f"Chapter {chapter_title!r} not found in {book_title!r}")
+            return selected_chunks
+
+        raise ValueError(f"Book {book_title!r} not found")
 
     async def upload(
         self,
@@ -88,6 +128,7 @@ class LibraryService:
                     raise LibraryError(409, f"A book named {safe_filename} already exists in the library.")
 
                 temporary_path.replace(destination)
+                self._catalog_cache.pop(destination, None)
                 try:
                     indexed = self.build_index()
                 except Exception as exc:
@@ -114,6 +155,83 @@ class LibraryService:
             for path in self.resources_dir.iterdir()
             if path.is_file() and path.suffix.lower() in self._extractors
         )
+
+    def _catalog(self, path: Path) -> dict:
+        fingerprint = (path.stat().st_mtime_ns, path.stat().st_size)
+        cached = self._catalog_cache.get(path)
+        if cached and cached[0] == fingerprint:
+            return cached[1]
+
+        catalog = self._extractors[path.suffix.lower()].catalog(path)
+        self._catalog_cache[path] = (fingerprint, catalog)
+        return catalog
+
+    @staticmethod
+    def _split_exam_text(text: str) -> list[str]:
+        paragraphs = [paragraph.strip() for paragraph in re.split(r"\n\s*\n", text) if paragraph.strip()]
+        chunks: list[str] = []
+        current = ""
+        for paragraph in paragraphs:
+            if len(paragraph) > EXAM_CHUNK_SIZE:
+                if current:
+                    chunks.append(current)
+                    current = ""
+                chunks.extend(LibraryService._split_long_paragraph(paragraph))
+            elif current and len(current) + len(paragraph) + 2 > EXAM_CHUNK_SIZE:
+                chunks.append(current)
+                current = paragraph
+            else:
+                current = f"{current}\n\n{paragraph}" if current else paragraph
+        if current:
+            chunks.append(current)
+        return chunks
+
+    @staticmethod
+    def _split_long_paragraph(paragraph: str) -> list[str]:
+        words = paragraph.split()
+        chunks = []
+        start = 0
+        while start < len(words):
+            end = start
+            length = 0
+            while end < len(words):
+                extra = len(words[end]) if end == start else len(words[end]) + 1
+                if length + extra > EXAM_CHUNK_SIZE and end > start:
+                    break
+                length += extra
+                end += 1
+            chunks.append(" ".join(words[start:end]))
+            if end >= len(words):
+                break
+
+            overlap_start = end
+            overlap_length = 0
+            while overlap_start > start and overlap_length < EXAM_CHUNK_OVERLAP:
+                overlap_start -= 1
+                overlap_length += len(words[overlap_start]) + 1
+            start = overlap_start if overlap_start > start else end
+        return chunks
+
+    @staticmethod
+    def _select_evenly_spaced(chunks: list[str], count: int) -> list[str]:
+        if len(chunks) <= count:
+            return chunks
+        if count == 1:
+            return [chunks[len(chunks) // 2]]
+        return [chunks[round(index * (len(chunks) - 1) / (count - 1))] for index in range(count)]
+
+    @staticmethod
+    def _format_exam_source(chunks: list[dict]) -> str:
+        parts = []
+        previous_chapter = object()
+        for chunk in chunks:
+            chapter = chunk.get("chapter")
+            if chapter and chapter != previous_chapter:
+                parts.append(f"{chapter}\n{chunk['text']}")
+            else:
+                parts.append(chunk["text"])
+            previous_chapter = chapter
+        return "\n\n".join(parts)
 
     def _unsupported_format_message(self) -> str:
         extensions = sorted(extension.removeprefix(".").upper() for extension in self._extractors)

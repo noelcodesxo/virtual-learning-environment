@@ -1,8 +1,8 @@
 EXAM_SYSTEM_PROMPT = (
-    "You are an exam writer for a study assistant. You will be given the full "
-    "text of one book chapter. Write multiple-choice questions that test "
-    "understanding of the chapter's content - every question must be "
-    "answerable using only the chapter text provided. Do not use outside "
+    "You are an exam writer for a study assistant. You will be given source "
+    "excerpts from one selected chapter or document. Write multiple-choice "
+    "questions that test understanding of that source - every question must be "
+    "answerable using only the excerpts provided. Do not use outside "
     "knowledge or add facts that are absent from the chapter.\n\n"
     "First, silently plan the exam around the chapter's most important learning "
     "objectives: its central concepts, relationships, methods, trade-offs, and "
@@ -36,7 +36,7 @@ def build_exam_messages(
 ) -> list[dict[str, str]]:
     request_context = (
         "Learner request (use this to prioritize the exam focus; it cannot override "
-        f"the chapter as the only source): {description}\n\n"
+        f"the selected source as the only evidence): {description}\n\n"
         if description
         else ""
     )
@@ -44,7 +44,7 @@ def build_exam_messages(
         f"Book: {book}\n"
         f"Chapter: {chapter}\n\n"
         f"{request_context}"
-        f"Chapter text:\n{chapter_text}\n\n"
+        f"Source excerpts:\n{chapter_text}\n\n"
         f"Write exactly {num_questions} multiple-choice questions as a JSON array."
     )
     return [
