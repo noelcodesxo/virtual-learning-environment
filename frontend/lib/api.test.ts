@@ -17,4 +17,13 @@ describe("api client", () => {
 
     await expect(api.models()).rejects.toThrow("Unavailable");
   });
+
+  it("uploads EPUB files through the API rewrite", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ filename: "book.epub", indexed_chunks: 12 }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["epub"], "book.epub", { type: "application/epub+zip" });
+
+    await expect(api.uploadLibraryFile(file)).resolves.toEqual({ filename: "book.epub", indexed_chunks: 12 });
+    expect(fetchMock).toHaveBeenCalledWith("/api/library/upload?filename=book.epub", expect.objectContaining({ method: "POST", body: file }));
+  });
 });
