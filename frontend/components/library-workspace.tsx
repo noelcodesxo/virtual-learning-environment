@@ -12,6 +12,7 @@ export function LibraryWorkspace() {
   const [error, setError] = useState("");
   const [uploadStatus, setUploadStatus] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [deletingFilename, setDeletingFilename] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const uploadInput = useRef<HTMLInputElement>(null);
 
@@ -53,6 +54,23 @@ export function LibraryWorkspace() {
     }
   }
 
+  async function deleteFile(document: LibraryDocument) {
+    if (deletingFilename || !window.confirm(`Remove ${document.filename} from your library? This cannot be undone.`)) return;
+
+    setDeletingFilename(document.filename);
+    setUploadStatus(`Removing ${document.filename}…`);
+    try {
+      const deleted = await api.deleteLibraryFile(document.filename);
+      setDocuments((current) => current.filter((item) => item.filename !== deleted.filename));
+      setExpanded((current) => current === deleted.filename ? null : current);
+      setUploadStatus(`Removed ${deleted.filename} from your library.`);
+    } catch (requestError) {
+      setUploadStatus(requestError instanceof Error ? requestError.message : "Could not remove the document.");
+    } finally {
+      setDeletingFilename(null);
+    }
+  }
+
   return <section className="library-page" aria-labelledby="library-title">
     <header className="workspace-header">
       <div><p className="eyebrow">Your study materials</p><h1 id="library-title">Resources</h1><p>Documents are indexed and ready for chat and exam generation.</p></div>
@@ -64,7 +82,7 @@ export function LibraryWorkspace() {
     {!isLoading && !error && documents.length === 0 ? <div className="workspace-message"><h2>Your library is empty</h2><p>Add an EPUB or PDF to start chatting and building exams from it.</p></div> : null}
     {!isLoading && !error && documents.length > 0 ? <div className="document-list">{documents.map((document) => <article className="document-card" key={document.filename}>
       <div className="document-main"><span className="format-badge">{document.format.toUpperCase()}</span><div><h2>{document.title}</h2><p>{document.chapters.length} {document.chapters.length === 1 ? "chapter" : "chapters"} · Ready</p><span className="document-filename">{document.filename}</span></div></div>
-      <button className="text-action" type="button" aria-expanded={expanded === document.filename} onClick={() => setExpanded((current) => current === document.filename ? null : document.filename)}>{expanded === document.filename ? "Hide chapters" : "View chapters"}</button>
+      <div className="document-actions"><button className="text-action" type="button" aria-expanded={expanded === document.filename} onClick={() => setExpanded((current) => current === document.filename ? null : document.filename)}>{expanded === document.filename ? "Hide chapters" : "View chapters"}</button><button className="text-action remove-action" type="button" onClick={() => deleteFile(document)} disabled={deletingFilename !== null} aria-label={`Remove ${document.filename}`}>{deletingFilename === document.filename ? "Removing…" : "Remove"}</button></div>
       {expanded === document.filename ? <ul className="chapter-list">{document.chapters.map((chapter) => <li key={chapter}>{chapter}</li>)}</ul> : null}
     </article>)}</div> : null}
   </section>;

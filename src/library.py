@@ -29,6 +29,12 @@ class UploadResult:
     indexed: list[dict]
 
 
+@dataclass(frozen=True)
+class DeleteResult:
+    filename: str
+    indexed: list[dict]
+
+
 class LibraryService:
     """Stores supported source documents and rebuilds the search index."""
 
@@ -148,6 +154,28 @@ class LibraryService:
                     raise LibraryError(422, self._invalid_document_message()) from exc
 
                 return UploadResult(filename=destination.name, indexed=indexed)
+            finally:
+                temporary_path.unlink(missing_ok=True)
+
+    async def delete(self, filename: str) -> DeleteResult:
+        """Remove a library document and refresh the search index."""
+        safe_filename = self._safe_filename(filename)
+        async with self._lock:
+            destination = self.resources_dir / safe_filename
+            if not destination.is_file():
+                raise LibraryError(404, f"Document {safe_filename} was not found in the library.")
+
+            temporary_path = self.resources_dir / f".{uuid.uuid4().hex}.delete"
+            try:
+                destination.replace(temporary_path)
+                self._catalog_cache.pop(destination, None)
+                try:
+                    indexed = self.build_index()
+                except Exception as exc:
+                    temporary_path.replace(destination)
+                    raise LibraryError(500, "Could not remove this document") from exc
+
+                return DeleteResult(filename=safe_filename, indexed=indexed)
             finally:
                 temporary_path.unlink(missing_ok=True)
 

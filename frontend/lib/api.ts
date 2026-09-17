@@ -21,6 +21,10 @@ export const api = {
     `/library/upload?filename=${encodeURIComponent(file.name)}`,
     { method: "POST", headers: { "Content-Type": file.type || "application/epub+zip" }, body: file },
   ),
+  deleteLibraryFile: (filename: string) => request<{ filename: string; indexed_chunks: number }>(
+    `/library/${encodeURIComponent(filename)}`,
+    { method: "DELETE" },
+  ),
   resolveDescription: (description: string) => request<{ book: string; chapter: string }>("/exams/resolve-description", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description }),
   }),
