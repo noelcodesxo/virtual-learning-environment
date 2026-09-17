@@ -1,4 +1,4 @@
-import type { Book, ChatResponse, Exam, ExamSummary, GradedExam } from "./types";
+import type { Book, ChatResponse, Exam, ExamSummary, GradedExam, LibraryDocument } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, init);
@@ -13,6 +13,7 @@ export const api = {
   models: () => request<{ models: string[] }>("/models"),
   features: () => request<{ exam_builder: boolean }>("/features"),
   books: () => request<{ books: Book[] }>("/books"),
+  library: () => request<{ documents: LibraryDocument[] }>("/library"),
   chat: (query: string, model: string) => request<ChatResponse>("/chat", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, model }),
   }),

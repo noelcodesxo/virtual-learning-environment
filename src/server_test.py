@@ -63,6 +63,9 @@ class _FakeLibrary:
             raise self.error
         return self.result
 
+    def list_documents(self):
+        return [{"title": "Research paper", "filename": "research.pdf", "format": "pdf", "chapters": ["Entire document"]}]
+
 
 def test_list_models_returns_sorted_model_names(monkeypatch):
     def fake_urlopen(request, timeout=None):
@@ -145,6 +148,17 @@ def test_get_features_reflects_the_env_flag(monkeypatch):
 
     monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", False)
     assert server.get_features().exam_builder is False
+
+
+def test_list_library_documents_is_available_when_exam_builder_is_disabled(monkeypatch):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", False)
+    monkeypatch.setattr(server, "library", _FakeLibrary())
+
+    response = server.list_library_documents()
+
+    assert response.documents == [server.LibraryDocument(
+        title="Research paper", filename="research.pdf", format="pdf", chapters=["Entire document"]
+    )]
 
 
 class _FakeChapterLoader:

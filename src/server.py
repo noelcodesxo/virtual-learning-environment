@@ -81,6 +81,17 @@ class UploadResponse(BaseModel):
     indexed_chunks: int
 
 
+class LibraryDocument(BaseModel):
+    title: str
+    filename: str
+    format: str
+    chapters: list[str]
+
+
+class LibraryResponse(BaseModel):
+    documents: list[LibraryDocument]
+
+
 def fetch_ollama_models(base_url: str) -> list[str]:
     request = urllib.request.Request(f"{base_url.rstrip('/')}/api/tags")
     try:
@@ -126,6 +137,11 @@ async def upload_library_file(request: Request, filename: str):
 
     state["index"] = result.indexed
     return UploadResponse(filename=result.filename, indexed_chunks=len(result.indexed))
+
+
+@app.get("/library", response_model=LibraryResponse)
+def list_library_documents():
+    return LibraryResponse(documents=[LibraryDocument(**document) for document in library.list_documents()])
 
 
 class FeaturesResponse(BaseModel):

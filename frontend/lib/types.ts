@@ -9,6 +9,13 @@ export type ChatResponse = { answer: string; sources: Source[] };
 
 export type Book = { title: string; chapters: string[] };
 
+export type LibraryDocument = {
+  title: string;
+  filename: string;
+  format: "epub" | "pdf";
+  chapters: string[];
+};
+
 export type ExamQuestion = { section: string; question: string; options: string[] };
 
 export type Exam = {

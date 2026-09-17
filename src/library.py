@@ -63,6 +63,18 @@ class LibraryService:
     def list_books(self) -> list[dict]:
         return [self._catalog(path) for path in self._resource_paths()]
 
+    def list_documents(self) -> list[dict]:
+        """Return the display catalog for every supported library document."""
+        documents = []
+        for path in self._resource_paths():
+            catalog = self._catalog(path)
+            documents.append({
+                **catalog,
+                "filename": path.name,
+                "format": path.suffix.removeprefix(".").lower(),
+            })
+        return documents
+
     def load_chapter_text(self, book_title: str, chapter_title: str) -> str:
         return "\n\n".join(chunk["text"] for chunk in self._source_chunks(book_title, chapter_title))
 
