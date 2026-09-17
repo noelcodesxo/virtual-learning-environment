@@ -12,7 +12,6 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from chapter_loader import ChapterLoader
 from exam_parser import parse_exam_json
 from exam_prompts import build_exam_messages
 from exam_selection import build_exam_selection_messages, parse_exam_selection_json
@@ -27,9 +26,9 @@ INDEX_PATH = Path(os.environ.get("INDEX_PATH", Path(__file__).parent.parent / "i
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 DEFAULT_MODEL = os.environ.get("LLM_MODEL", "qwen3:8b")
 
-# Exam generation is a separate, opt-in module: it reads whole chapters
-# straight from the epub (via ChapterLoader) and never touches the BM25
-# index or the chat retriever, so it can stay off while it's still new.
+# Exam generation is a separate, opt-in module: it reads full source text
+# from the document library (a chapter for EPUBs, an entire document for
+# other formats) and never touches the BM25 index or chat retriever.
 EXAM_BUILDER_ENABLED = os.environ.get("EXAM_BUILDER_ENABLED", "false").lower() == "true"
 EXAM_MODEL = os.environ.get("EXAM_MODEL", "anthropic/claude-3.5-sonnet")
 
@@ -41,7 +40,7 @@ library = LibraryService(RESOURCES_DIR, INDEX_PATH)
 async def lifespan(app: FastAPI):
     state["index"] = load_index(INDEX_PATH) if INDEX_PATH.exists() else library.build_index()
     state["retriever"] = Retriever()
-    state["chapter_loader"] = ChapterLoader(RESOURCES_DIR)
+    state["chapter_loader"] = library
     state["exams"] = {}
     yield
     state.clear()
@@ -140,9 +139,9 @@ def get_features():
 
 # ===================== Exam builder =====================
 #
-# Separate from the chat/RAG path above: exams are generated from a whole
-# chapter's text (via ChapterLoader), not BM25 search results, and answers
-# are withheld from the client until the exam is graded.
+# Separate from the chat/RAG path above: exams use bounded source excerpts
+# from the selected EPUB chapter or full document, not BM25 search results.
+# Answers are withheld from the client until the exam is graded.
 
 
 class Book(BaseModel):
@@ -298,7 +297,11 @@ def generate_exam(request: GenerateExamRequest):
         raise HTTPException(status_code=400, detail="description must not be empty when generated_from is 'description'")
 
     try:
-        chapter_text = state["chapter_loader"].load_chapter_text(request.book, request.chapter)
+        chapter_text = state["chapter_loader"].load_exam_text(
+            request.book,
+            request.chapter,
+            request.num_questions,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

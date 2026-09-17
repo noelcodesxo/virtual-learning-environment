@@ -161,6 +161,9 @@ class _FakeChapterLoader:
             raise ValueError(f"Chapter {chapter!r} not found in {book!r}")
         return self._chapter_text_by_key[(book, chapter)]
 
+    def load_exam_text(self, book, chapter, num_questions):
+        return self.load_chapter_text(book, chapter)
+
 
 def _exam_question(**overrides):
     base = {

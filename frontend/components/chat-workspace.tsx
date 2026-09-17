@@ -75,7 +75,7 @@ export function ChatWorkspace() {
       </select>
     </div></header>
     <div className="workspace">
-      <aside className="workspace-sidebar"><button className="new-chat" type="button" onClick={() => setCurrentThreadId(null)}>＋ <span>New chat</span></button><label className="upload-library"><input ref={uploadInput} type="file" accept=".epub,application/epub+zip" onChange={uploadFile} disabled={isUploading} /><span>{isUploading ? "Adding EPUB…" : "Add EPUB"}</span></label><p className="upload-status" role="status">{uploadStatus}</p><div className="section-label">Recent</div>
+      <aside className="workspace-sidebar"><button className="new-chat" type="button" onClick={() => setCurrentThreadId(null)}>＋ <span>New chat</span></button><label className="upload-library"><input ref={uploadInput} type="file" accept=".epub,application/epub+zip,.pdf,application/pdf" onChange={uploadFile} disabled={isUploading} /><span>{isUploading ? "Adding document…" : "Add document"}</span></label><p className="upload-status" role="status">{uploadStatus}</p><div className="section-label">Recent</div>
         <div className="recent-list">{threads.map((thread) => <button key={thread.id} type="button" className={`recent-item${thread.id === currentThreadId ? " active" : ""}`} aria-current={thread.id === currentThreadId ? "page" : undefined} onClick={() => setCurrentThreadId(thread.id)}>{thread.title}</button>)}</div>
       </aside>
       <section className="chat-panel" aria-label="Chat"><div className="conversation"><div className="thread" role="log" aria-live="polite" aria-relevant="additions text">
