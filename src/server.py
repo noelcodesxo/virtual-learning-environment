@@ -3,26 +3,22 @@ import os
 import urllib.error
 import urllib.request
 import uuid
-from asyncio import Lock
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from ebooklib import epub
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from chapter_loader import ChapterLoader
-from chunker import Chunker
 from exam_parser import parse_exam_json
 from exam_prompts import build_exam_messages
 from exam_selection import build_exam_selection_messages, parse_exam_selection_json
 from index_loader import load_index
-from indexer import Indexer
+from library import LibraryError, LibraryService
 from llm_client import build_client
-from preprocessor import PreProcessor
 from prompts import build_rag_messages
 from retriever import Retriever
 
@@ -36,32 +32,14 @@ DEFAULT_MODEL = os.environ.get("LLM_MODEL", "qwen3:8b")
 # index or the chat retriever, so it can stay off while it's still new.
 EXAM_BUILDER_ENABLED = os.environ.get("EXAM_BUILDER_ENABLED", "false").lower() == "true"
 EXAM_MODEL = os.environ.get("EXAM_MODEL", "anthropic/claude-3.5-sonnet")
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 state: dict = {}
-library_lock = Lock()
-
-
-def build_index() -> list[dict]:
-    epub_paths = sorted(RESOURCES_DIR.glob("*.epub"))
-    books = [epub.read_epub(str(path)) for path in epub_paths]
-
-    chunker = Chunker()
-    chunks = [chunk for book_chunks in chunker.process_books(books) for chunk in book_chunks]
-
-    preprocessor = PreProcessor()
-    for chunk in chunks:
-        chunk["text"] = preprocessor.process(chunk["text"])
-
-    indexer = Indexer()
-    indexed = indexer.index(chunks)
-    indexer.save(indexed, INDEX_PATH)
-    return indexed
+library = LibraryService(RESOURCES_DIR, INDEX_PATH)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    state["index"] = load_index(INDEX_PATH) if INDEX_PATH.exists() else build_index()
+    state["index"] = load_index(INDEX_PATH) if INDEX_PATH.exists() else library.build_index()
     state["retriever"] = Retriever()
     state["chapter_loader"] = ChapterLoader(RESOURCES_DIR)
     state["exams"] = {}
@@ -140,58 +118,15 @@ def chat(request: ChatRequest):
     return ChatResponse(answer=answer, sources=sources)
 
 
-def _safe_epub_filename(filename: str) -> str:
-    candidate = Path(filename).name
-    if not filename or candidate != filename or candidate in {".", ".."}:
-        raise HTTPException(status_code=400, detail="A valid filename is required")
-    if Path(candidate).suffix.lower() != ".epub":
-        raise HTTPException(status_code=415, detail="Only EPUB files are supported")
-    return candidate
-
-
 @app.post("/library/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_library_file(request: Request, filename: str):
-    safe_filename = _safe_epub_filename(filename)
-    content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="File must be 50 MB or smaller")
+    try:
+        result = await library.upload(filename, request.stream(), request.headers.get("content-length"))
+    except LibraryError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-    RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
-    async with library_lock:
-        destination = RESOURCES_DIR / safe_filename
-        temporary_path = RESOURCES_DIR / f".{uuid.uuid4().hex}.upload"
-        size = 0
-        try:
-            with temporary_path.open("wb") as upload:
-                async for chunk in request.stream():
-                    size += len(chunk)
-                    if size > MAX_UPLOAD_BYTES:
-                        raise HTTPException(status_code=413, detail="File must be 50 MB or smaller")
-                    upload.write(chunk)
-
-            if size == 0:
-                raise HTTPException(status_code=400, detail="The uploaded file is empty")
-
-            # Finish reading the incoming upload before replying. Returning while
-            # the client is still streaming a duplicate EPUB can make browsers
-            # report a network error instead of the 409 response.
-            if destination.exists():
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"A book named {safe_filename} already exists in the library.",
-                )
-
-            temporary_path.replace(destination)
-            try:
-                indexed = build_index()
-            except Exception as exc:
-                destination.unlink(missing_ok=True)
-                raise HTTPException(status_code=422, detail="Could not read this EPUB file") from exc
-
-            state["index"] = indexed
-            return UploadResponse(filename=destination.name, indexed_chunks=len(indexed))
-        finally:
-            temporary_path.unlink(missing_ok=True)
+    state["index"] = result.indexed
+    return UploadResponse(filename=result.filename, indexed_chunks=len(result.indexed))
 
 
 class FeaturesResponse(BaseModel):
