@@ -128,6 +128,16 @@ def test_list_books_uses_lightweight_catalogs_without_extracting_document_text(t
     assert pdf_extractor.catalog_paths == [service.resources_dir / "research.pdf"]
 
 
+def test_list_books_caches_unchanged_document_catalogs(tmp_path):
+    extractor = _FakeExtractor()
+    service = _service(tmp_path, extractor)
+    service.resources_dir.mkdir()
+    (service.resources_dir / "book.epub").write_bytes(b"epub")
+
+    assert service.list_books() == service.list_books()
+    assert extractor.catalog_paths == [service.resources_dir / "book.epub"]
+
+
 def test_load_exam_text_uses_bounded_evenly_distributed_document_excerpts(tmp_path):
     pdf_extractor = _PdfExtractor([
         {"book": "Research paper", "chapter": f"Page {number}", "section": None, "text": f"page {number} " + "word " * 280}

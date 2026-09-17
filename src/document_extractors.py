@@ -10,6 +10,12 @@ from chunker import Chunker
 
 ENTIRE_DOCUMENT_CHAPTER = "Entire document"
 CHAPTER_TITLE_RE = re.compile(r"^\d+\.")
+CONTENTS_HEADER_RE = re.compile(r"^\s*(?:table of )?contents\s*$", re.IGNORECASE | re.MULTILINE)
+TOC_CHAPTER_RE = re.compile(r"^\s*(Chapter\s+\d+\.?\s+.+?)\s+(\d+)\s*$", re.IGNORECASE | re.MULTILINE)
+TOC_SECTION_RE = re.compile(r"^\s*(\d+\.\d+\.?\s+.+?)\s+(\d+)\s*$", re.MULTILINE)
+PRINTED_PAGE_RE = re.compile(r"^\s*(\d+)\s*$", re.MULTILINE)
+MAX_TOC_SCAN_PAGES = 20
+MAX_TOC_CONTINUATION_PAGES = 5
 
 
 class DocumentExtractor(Protocol):
@@ -99,5 +105,37 @@ class PdfExtractor:
         try:
             walk(reader.outline)
         except Exception:
+            return PdfExtractor._printed_toc_entries(reader)
+        return entries or PdfExtractor._printed_toc_entries(reader)
+
+    @staticmethod
+    def _printed_toc_entries(reader) -> list[tuple[int, str, int]]:
+        toc_pages = []
+        toc_start_page = None
+        for page_number, page in enumerate(reader.pages[:MAX_TOC_SCAN_PAGES]):
+            text = page.extract_text() or ""
+            if CONTENTS_HEADER_RE.search(text):
+                toc_start_page = page_number
+                toc_pages.append(text)
+                break
+        if toc_start_page is None:
             return []
-        return entries
+
+        for page_number in range(toc_start_page + 1, min(
+            toc_start_page + MAX_TOC_CONTINUATION_PAGES + 1,
+            len(reader.pages),
+        )):
+            text = reader.pages[page_number].extract_text() or ""
+            if not TOC_CHAPTER_RE.search(text) and not TOC_SECTION_RE.search(text):
+                break
+            toc_pages.append(text)
+
+        printed_page = PRINTED_PAGE_RE.search(toc_pages[0])
+        page_offset = toc_start_page - int(printed_page.group(1)) if printed_page else 0
+        entries = []
+        for text in toc_pages:
+            for title, page_number in TOC_CHAPTER_RE.findall(text):
+                entries.append((int(page_number) + page_offset, title.strip(), 0))
+            for title, page_number in TOC_SECTION_RE.findall(text):
+                entries.append((int(page_number) + page_offset, title.strip(), 1))
+        return [entry for entry in entries if 0 <= entry[0] < len(reader.pages)]

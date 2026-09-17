@@ -43,6 +43,7 @@ class LibraryService:
         self.index_path = Path(index_path)
         self.max_upload_bytes = max_upload_bytes
         self._extractors = self._build_extractor_registry(extractors or [EpubExtractor(), PdfExtractor()])
+        self._catalog_cache: dict[Path, tuple[tuple[int, int], dict]] = {}
         self._lock = Lock()
 
     def build_index(self) -> list[dict]:
@@ -60,7 +61,7 @@ class LibraryService:
         return indexed
 
     def list_books(self) -> list[dict]:
-        return [self._extractors[path.suffix.lower()].catalog(path) for path in self._resource_paths()]
+        return [self._catalog(path) for path in self._resource_paths()]
 
     def load_chapter_text(self, book_title: str, chapter_title: str) -> str:
         return "\n\n".join(chunk["text"] for chunk in self._source_chunks(book_title, chapter_title))
@@ -127,6 +128,7 @@ class LibraryService:
                     raise LibraryError(409, f"A book named {safe_filename} already exists in the library.")
 
                 temporary_path.replace(destination)
+                self._catalog_cache.pop(destination, None)
                 try:
                     indexed = self.build_index()
                 except Exception as exc:
@@ -153,6 +155,16 @@ class LibraryService:
             for path in self.resources_dir.iterdir()
             if path.is_file() and path.suffix.lower() in self._extractors
         )
+
+    def _catalog(self, path: Path) -> dict:
+        fingerprint = (path.stat().st_mtime_ns, path.stat().st_size)
+        cached = self._catalog_cache.get(path)
+        if cached and cached[0] == fingerprint:
+            return cached[1]
+
+        catalog = self._extractors[path.suffix.lower()].catalog(path)
+        self._catalog_cache[path] = (fingerprint, catalog)
+        return catalog
 
     @staticmethod
     def _split_exam_text(text: str) -> list[str]:

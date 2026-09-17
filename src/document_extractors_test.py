@@ -81,3 +81,29 @@ def test_pdf_extractor_maps_outline_chapters_and_sections_to_page_chunks(monkeyp
         "title": "research-paper",
         "chapters": ["1. Introduction", "2. Methods"],
     }
+
+
+def test_pdf_extractor_uses_a_printed_table_of_contents_when_bookmarks_are_missing(monkeypatch, tmp_path):
+    pages = [_FakePage("") for _ in range(31)]
+    pages[6] = _FakePage(
+        "6\nContents\nChapter 1. Basics 10\n1.1. First Topic 10\nChapter 2. Methods 20\n"
+    )
+    pages[7] = _FakePage("7\nChapter 3. Results 30\n")
+    pages[10] = _FakePage("basics")
+    pages[20] = _FakePage("methods")
+    pages[30] = _FakePage("results")
+    monkeypatch.setattr(document_extractors, "PdfReader", lambda path: _FakeReader(pages))
+
+    extractor = PdfExtractor()
+    catalog = extractor.catalog(tmp_path / "book.pdf")
+    chunks = extractor.extract_chunks(tmp_path / "book.pdf")
+
+    assert catalog == {
+        "title": "book",
+        "chapters": ["Chapter 1. Basics", "Chapter 2. Methods", "Chapter 3. Results"],
+    }
+    assert [chunk for chunk in chunks if chunk["text"] in {"basics", "methods", "results"}] == [
+        {"text": "basics", "chapter": "Chapter 1. Basics", "section": "1.1. First Topic", "book": "book"},
+        {"text": "methods", "chapter": "Chapter 2. Methods", "section": None, "book": "book"},
+        {"text": "results", "chapter": "Chapter 3. Results", "section": None, "book": "book"},
+    ]
