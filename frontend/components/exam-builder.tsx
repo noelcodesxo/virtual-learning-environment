@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, KeyboardEvent, useEffect, useState } from "react";
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { Book, Exam, ExamSummary, GradedExam } from "../lib/types";
 
@@ -26,11 +26,14 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
   const [recent, setRecent] = useState<ExamSummary[]>([]);
   const [isResolving, setIsResolving] = useState(false);
 
-  const loadRecent = () =>
-    api
-      .exams()
-      .then((data) => setRecent(data.exams))
-      .catch(() => setRecent([]));
+  const loadRecent = useCallback(
+    () =>
+      api
+        .exams()
+        .then((data) => setRecent(data.exams))
+        .catch(() => setRecent([])),
+    [],
+  );
   useEffect(() => {
     api
       .features()
@@ -109,7 +112,7 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
       setStage("configure");
     }
   }
-  async function grade() {
+  const grade = useCallback(async () => {
     if (!exam) return;
     setError("");
     try {
@@ -120,7 +123,7 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
     } catch (err) {
       setError(errorText(err));
     }
-  }
+  }, [answers, exam, loadRecent]);
   async function openExam(id: string) {
     try {
       const data = await api.exam(id);
@@ -140,6 +143,48 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
       setStage("configure");
     }
   }
+  const selectAnswer = useCallback((index: number) => {
+    if (!exam || index >= exam.questions[current].options.length) return;
+    setAnswers((all) => ({ ...all, [current]: index }));
+  }, [current, exam]);
+  const goBack = useCallback(() => setCurrent((index) => Math.max(0, index - 1)), []);
+  const goForward = useCallback(() => {
+    if (!exam) return;
+    if (current === exam.questions.length - 1) return;
+    setCurrent((index) => index + 1);
+  }, [current, exam]);
+
+  useEffect(() => {
+    if (stage !== "exam" || !exam) return;
+
+    const handleExamKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && event.key === "Enter") {
+        event.preventDefault();
+        grade();
+        return;
+      }
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target?.tagName ?? "")) return;
+
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goBack();
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        goForward();
+      } else if (/^[1-4]$/.test(event.key)) {
+        const optionIndex = Number(event.key) - 1;
+        if (optionIndex < exam.questions[current].options.length) {
+          event.preventDefault();
+          selectAnswer(optionIndex);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleExamKeyDown);
+    return () => window.removeEventListener("keydown", handleExamKeyDown);
+  }, [current, exam, goBack, goForward, grade, selectAnswer, stage]);
 
   if (stage === "loading") return <div className="page-message">Loading exam builder…</div>;
   if (stage === "unavailable")
@@ -315,12 +360,14 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
                 <button
                   type="button"
                   aria-pressed={answers[current] === index}
+                  aria-keyshortcuts={`${index + 1}`}
+                  aria-label={`Option ${letters[index]}, shortcut ${index + 1}: ${option}`}
                   className={`opt-btn${answers[current] === index ? " selected" : ""}`}
-                  onClick={() => setAnswers((all) => ({ ...all, [current]: index }))}
+                  onClick={() => selectAnswer(index)}
                   key={option}
                 >
                   <span className="letter" aria-hidden="true">
-                    {letters[index]}
+                    {index + 1} <small>{letters[index]}</small>
                   </span>
                   {option}
                 </button>
@@ -336,16 +383,26 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
                 className="nav-btn"
                 type="button"
                 disabled={current === 0}
-                onClick={() => setCurrent((index) => index - 1)}
+                onClick={goBack}
+                aria-keyshortcuts="ArrowLeft"
               >
-                Back
+                <kbd aria-hidden="true">←</kbd> Back
               </button>
               <button
                 className="nav-btn primary"
                 type="button"
-                onClick={() => (current === exam.questions.length - 1 ? grade() : setCurrent((index) => index + 1))}
+                onClick={goForward}
+                aria-keyshortcuts={current === exam.questions.length - 1 ? "Control+Enter" : "ArrowRight"}
               >
-                {current === exam.questions.length - 1 ? "Submit exam" : "Next"}
+                {current === exam.questions.length - 1 ? (
+                  <>
+                    Submit exam <kbd aria-hidden="true">Ctrl</kbd> + <kbd aria-hidden="true">↵</kbd>
+                  </>
+                ) : (
+                  <>
+                    Next <kbd aria-hidden="true">→</kbd>
+                  </>
+                )}
               </button>
             </div>
           </div>
