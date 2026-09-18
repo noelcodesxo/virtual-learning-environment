@@ -6,7 +6,7 @@ from exam_store import ExamStore
 def _exam(**overrides):
     exam = {
         "id": "exam-1",
-        "book": "AI Engineering",
+        "source": "AI Engineering",
         "chapter": "4. Evaluate AI Systems",
         "questions": [{
             "section": "Evaluation Criteria",
@@ -51,3 +51,13 @@ def test_exam_store_skips_corrupt_files_without_losing_valid_exams(tmp_path, cap
 
     assert store.load() == {"exam-1": _exam()}
     assert "Skipping invalid saved exam broken.json" in caplog.text
+
+
+def test_exam_store_migrates_existing_book_fields_to_source(tmp_path):
+    store = ExamStore(tmp_path / "exams")
+    legacy_exam = _exam()
+    legacy_exam["book"] = legacy_exam.pop("source")
+    store.directory.mkdir()
+    (store.directory / "exam-1.json").write_text(json.dumps(legacy_exam))
+
+    assert store.load()["exam-1"]["source"] == "AI Engineering"

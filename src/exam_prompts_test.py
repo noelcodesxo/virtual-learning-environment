@@ -1,7 +1,7 @@
 from exam_prompts import build_exam_messages
 
 
-def test_build_exam_messages_includes_book_chapter_text_and_count():
+def test_build_exam_messages_includes_source_chapter_text_and_count():
     messages = build_exam_messages("AI Engineering", "4. Evaluate AI Systems", "chapter text here", 5)
 
     assert messages[0]["role"] == "system"

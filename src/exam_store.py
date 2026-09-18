@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 _REQUIRED_EXAM_FIELDS = {
     "id",
-    "book",
+    "source",
     "chapter",
     "questions",
     "created_at",
@@ -77,6 +77,9 @@ class ExamStore:
             exam = json.load(file)
         if not isinstance(exam, dict):
             raise ValueError("exam must be a JSON object")
+
+        if "source" not in exam and "book" in exam:
+            exam["source"] = exam.pop("book")
 
         missing_fields = _REQUIRED_EXAM_FIELDS - exam.keys()
         if missing_fields:

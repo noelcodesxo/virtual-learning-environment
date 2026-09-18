@@ -20,7 +20,7 @@ export type ExamQuestion = { section: string; question: string; options: string[
 
 export type Exam = {
   id: string;
-  book: string;
+  source: string;
   chapter: string;
   generated_from: "form" | "description";
   description?: string | null;

@@ -31,7 +31,7 @@ export const api = {
       method: "DELETE",
     }),
   resolveDescription: (description: string) =>
-    request<{ book: string; chapter: string }>("/exams/resolve-description", {
+    request<{ source: string; chapter: string }>("/exams/resolve-description", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ description }),

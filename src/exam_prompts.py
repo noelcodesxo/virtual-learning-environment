@@ -28,7 +28,7 @@ EXAM_SYSTEM_PROMPT = (
 
 
 def build_exam_messages(
-    book: str,
+    source: str,
     chapter: str,
     chapter_text: str,
     num_questions: int,
@@ -41,7 +41,7 @@ def build_exam_messages(
         else ""
     )
     user_content = (
-        f"Book: {book}\n"
+        f"Source: {source}\n"
         f"Chapter: {chapter}\n\n"
         f"{request_context}"
         f"Source excerpts:\n{chapter_text}\n\n"

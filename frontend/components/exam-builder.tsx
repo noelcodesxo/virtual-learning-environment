@@ -11,12 +11,12 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
 export function ExamBuilder({ initialView }: { initialView: "configure" | "history" }) {
   const [stage, setStage] = useState<Stage>("loading");
   const [books, setBooks] = useState<Book[]>([]);
-  const [book, setBook] = useState("");
+  const [examSource, setExamSource] = useState("");
   const [chapter, setChapter] = useState("");
   const [description, setDescription] = useState("");
   const [feedback, setFeedback] = useState("");
   const [questionCount, setQuestionCount] = useState(10);
-  const [source, setSource] = useState<"form" | "description">("form");
+  const [generationMethod, setGenerationMethod] = useState<"form" | "description">("form");
   const [exam, setExam] = useState<Exam | null>(null);
   const [graded, setGraded] = useState<GradedExam | null>(null);
   const [answers, setAnswers] = useState<Record<number, number>>({});
@@ -47,14 +47,14 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
       .catch(() => setStage("unavailable"));
   }, [initialView]);
 
-  const selectedBook = books.find((item) => item.title === book);
+  const selectedExamSource = books.find((item) => item.title === examSource);
   const reset = () => {
-    setBook("");
+    setExamSource("");
     setChapter("");
     setDescription("");
     setFeedback("");
     setQuestionCount(10);
-    setSource("form");
+    setGenerationMethod("form");
     setExam(null);
     setGraded(null);
     setAnswers({});
@@ -69,10 +69,10 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
     setError("");
     try {
       const selected = await api.resolveDescription(description.trim());
-      setBook(selected.book);
+      setExamSource(selected.source);
       setChapter(selected.chapter);
-      setSource("description");
-      setFeedback(`Using: ${selected.book} → ${selected.chapter}. Your description will guide the exam focus.`);
+      setGenerationMethod("description");
+      setFeedback(`Using: ${selected.source} → ${selected.chapter}. Your description will guide the exam focus.`);
     } catch (err) {
       setFeedback("");
       setError(errorText(err));
@@ -91,16 +91,16 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
     }
   }
   async function generate() {
-    if (!book || !chapter) return;
+    if (!examSource || !chapter) return;
     setStage("generating");
     setError("");
     try {
       const next = await api.generateExam({
-        book,
+        source: examSource,
         chapter,
         num_questions: questionCount,
-        generated_from: source,
-        description: source === "description" ? description.trim() : null,
+        generated_from: generationMethod,
+        description: generationMethod === "description" ? description.trim() : null,
       });
       setExam(next);
       setAnswers({});
@@ -201,14 +201,14 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
     request &&
     (request.generated_from === "description" && request.description
       ? `Your request: ${request.description}`
-      : `Form request: ${request.book} · ${request.chapter} · ${request.requested_question_count ?? graded?.total ?? exam?.questions.length} questions.`);
+      : `Form request: ${request.source} · ${request.chapter} · ${request.requested_question_count ?? graded?.total ?? exam?.questions.length} questions.`);
   const question = exam?.questions[current];
 
   return (
     <div className="exam-page">
       <header className="topbar">
         <span className="chat-title">
-          {exam ? `${exam.book} · ${exam.chapter}` : stage === "history" ? "Recent exams" : "New exam"}
+          {exam ? `${exam.source} · ${exam.chapter}` : stage === "history" ? "Recent exams" : "New exam"}
         </span>
         <div className="exam-header-actions">
           <Link className="header-action" href="/exams">
@@ -252,18 +252,18 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
             </form>
             <div className="divider-or">or choose directly</div>
             <div className="field-grid">
-              <label className="field" htmlFor="book">
-                Book
+              <label className="field" htmlFor="source">
+                Source
                 <select
-                  id="book"
-                  value={book}
+                  id="source"
+                  value={examSource}
                   onChange={(event) => {
-                    setBook(event.target.value);
+                    setExamSource(event.target.value);
                     setChapter("");
-                    setSource("form");
+                    setGenerationMethod("form");
                   }}
                 >
-                  <option value="">Select a book…</option>
+                  <option value="">Select a source…</option>
                   {books.map((item) => (
                     <option key={item.title}>{item.title}</option>
                   ))}
@@ -274,14 +274,14 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
                 <select
                   id="chapter"
                   value={chapter}
-                  disabled={!selectedBook}
+                  disabled={!selectedExamSource}
                   onChange={(event) => {
                     setChapter(event.target.value);
-                    setSource("form");
+                    setGenerationMethod("form");
                   }}
                 >
                   <option value="">Select a chapter or document…</option>
-                  {selectedBook?.chapters.map((item) => (
+                  {selectedExamSource?.chapters.map((item) => (
                     <option key={item}>{item}</option>
                   ))}
                 </select>
@@ -312,8 +312,8 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
                 {error}
               </p>
             )}
-            <button className="generate-btn" disabled={!book || !chapter} type="button" onClick={generate}>
-              {book && chapter ? "Generate exam" : "Select a book and chapter"}
+            <button className="generate-btn" disabled={!examSource || !chapter} type="button" onClick={generate}>
+              {examSource && chapter ? "Generate exam" : "Select a source and chapter"}
             </button>
           </div>
         )}
@@ -321,7 +321,7 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
         {stage === "generating" && (
           <div className="page-message" role="status">
             <p>
-              Source selected: {book} · {chapter}
+              Source selected: {examSource} · {chapter}
             </p>
             <h1>Waiting for the exam model response…</h1>
             <p className="generation-note">This can take a little while for longer documents.</p>
@@ -419,7 +419,7 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
                 <div className="score-label">correct</div>
               </div>
               <div>
-                {graded.book}
+                {graded.source}
                 <br />
                 <b>{graded.chapter}</b>
               </div>
@@ -504,7 +504,7 @@ function ExamHistory({ recent, onOpen }: { recent: ExamSummary[]; onOpen: (id: s
             <article className="history-card" key={item.id}>
               <div>
                 <p className="q-section-tag">{item.score === null ? "In progress" : "Completed"}</p>
-                <h2>{item.book}</h2>
+                <h2>{item.source}</h2>
                 <p>
                   {item.chapter} · {item.requested_question_count} questions
                 </p>

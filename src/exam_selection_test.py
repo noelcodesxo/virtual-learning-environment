@@ -15,9 +15,9 @@ def test_selection_messages_include_catalog_and_description():
 
 
 def test_parse_selection_requires_an_exact_catalog_match():
-    raw = '{"book": "AI Engineering", "chapter": "2. Understanding Foundation Models"}'
+    raw = '{"source": "AI Engineering", "chapter": "2. Understanding Foundation Models"}'
 
     assert parse_exam_selection_json(raw, BOOKS) == ("AI Engineering", "2. Understanding Foundation Models")
 
     with pytest.raises(ValueError, match="does not match"):
-        parse_exam_selection_json('{"book": "Other", "chapter": "2"}', BOOKS)
+        parse_exam_selection_json('{"source": "Other", "chapter": "2"}', BOOKS)

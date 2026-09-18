@@ -88,7 +88,7 @@ Use **Chat** when you want to explore your library or get help understanding a t
 
 ### Exams
 
-Use **Exams** when you want to test your understanding of a specific book chapter. Choose a book and chapter, or describe the topic you want to be tested on. The exam builder reads the full selected chapter and generates a multiple-choice exam; after you submit it, it scores your answers and explains the correct choices.
+Use **Exams** when you want to test your understanding of a specific source chapter. Choose a source and chapter, or describe the topic you want to be tested on. The exam builder reads the full selected chapter and generates a multiple-choice exam; after you submit it, it scores your answers and explains the correct choices.
 
 Exam generation is optional and disabled by default. The current implementation uses an OpenRouter-compatible model for selecting a chapter from a description and generating the exam, so enabling it requires `EXAM_BUILDER_ENABLED=true` and an `OPENROUTER_API_KEY`. You can choose the exam model with `EXAM_MODEL`; its default is `anthropic/claude-3.5-sonnet`. Chat remains local and uses Ollama.
 
