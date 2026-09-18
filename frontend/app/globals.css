@@ -546,17 +546,15 @@ button:disabled {
   font-size: 11px;
   flex: 0 0 auto;
 }
-.letter small {
-  color: #666;
-  font-size: 9px;
-}
 .exam-nav kbd {
   display: inline-block;
   min-width: 1.35em;
   padding: 0 0.2em;
   border: 1px solid currentColor;
   border-radius: 3px;
-  font: 11px "IBM Plex Mono", monospace;
+  font:
+    11px "IBM Plex Mono",
+    monospace;
   line-height: 1.35;
   text-align: center;
 }

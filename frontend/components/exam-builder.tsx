@@ -5,7 +5,6 @@ import { FormEvent, KeyboardEvent, useCallback, useEffect, useState } from "reac
 import { api } from "../lib/api";
 import type { Book, Exam, ExamSummary, GradedExam } from "../lib/types";
 
-const letters = ["A", "B", "C", "D"];
 type Stage = "loading" | "unavailable" | "configure" | "history" | "generating" | "exam" | "results";
 const errorText = (error: unknown) => (error instanceof Error ? error.message : "Could not reach the server.");
 
@@ -143,10 +142,13 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
       setStage("configure");
     }
   }
-  const selectAnswer = useCallback((index: number) => {
-    if (!exam || index >= exam.questions[current].options.length) return;
-    setAnswers((all) => ({ ...all, [current]: index }));
-  }, [current, exam]);
+  const selectAnswer = useCallback(
+    (index: number) => {
+      if (!exam || index >= exam.questions[current].options.length) return;
+      setAnswers((all) => ({ ...all, [current]: index }));
+    },
+    [current, exam],
+  );
   const goBack = useCallback(() => setCurrent((index) => Math.max(0, index - 1)), []);
   const goForward = useCallback(() => {
     if (!exam) return;
@@ -361,13 +363,13 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
                   type="button"
                   aria-pressed={answers[current] === index}
                   aria-keyshortcuts={`${index + 1}`}
-                  aria-label={`Option ${letters[index]}, shortcut ${index + 1}: ${option}`}
+                  aria-label={`Option ${index + 1}, shortcut ${index + 1}: ${option}`}
                   className={`opt-btn${answers[current] === index ? " selected" : ""}`}
                   onClick={() => selectAnswer(index)}
                   key={option}
                 >
                   <span className="letter" aria-hidden="true">
-                    {index + 1} <small>{letters[index]}</small>
+                    {index + 1}
                   </span>
                   {option}
                 </button>
@@ -440,7 +442,7 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
                       key={option}
                     >
                       <span className="letter" aria-hidden="true">
-                        {letters[optionIndex]}
+                        {optionIndex + 1}
                       </span>
                       {option}
                       {optionIndex === item.correct_index && <span className="sr-only"> (correct answer)</span>}
