@@ -26,7 +26,7 @@ Follow the existing Python style: four-space indentation, `snake_case` for funct
 
 ## Testing Guidelines
 
-Write pytest tests next to the code they cover using the `*_test.py` pattern and descriptive names such as `test_chat_rejects_empty_query`. Unit tests should mock networked LLM and HTTP calls, as existing tests do. Run the focused test file while iterating, then `uv run pytest -q` before submitting changes. For UI changes, exercise the affected flows in a browser before marking the work complete; fix issues found during that testing and retest until the flows pass or further progress is blocked.
+Write pytest tests next to the code they cover using the `*_test.py` pattern and descriptive names such as `test_chat_rejects_empty_query`. Unit tests should mock networked LLM and HTTP calls, as existing tests do. Run the focused test file while iterating, then `uv run pytest -q` before submitting changes. For UI changes, exercise the affected flows in a browser with the Playwright MCP before marking the work complete; fix issues found during that testing and retest until the flows pass or further progress is blocked. If the Playwright MCP is unavailable, report that blocker rather than substituting another browser automation tool.
 
 ## Commit & Pull Request Guidelines
 
