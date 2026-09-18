@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from exam_parser import parse_exam_json
 from exam_prompts import build_exam_messages
 from exam_selection import build_exam_selection_messages, parse_exam_selection_json
+from exam_store import ExamStore, ExamStoreError
 from index_loader import load_index
 from library import LibraryError, LibraryService
 from llm_client import build_client
@@ -23,6 +24,7 @@ from retriever import Retriever
 
 RESOURCES_DIR = Path(__file__).parent / "resources"
 INDEX_PATH = Path(os.environ.get("INDEX_PATH", Path(__file__).parent.parent / "index.json"))
+EXAMS_DIR = Path(os.environ.get("EXAMS_DIR", Path(__file__).parent.parent / "data" / "exams"))
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 DEFAULT_MODEL = os.environ.get("LLM_MODEL", "qwen3:8b")
 
@@ -41,7 +43,8 @@ async def lifespan(app: FastAPI):
     state["index"] = load_index(INDEX_PATH) if INDEX_PATH.exists() else library.build_index()
     state["retriever"] = Retriever()
     state["chapter_loader"] = library
-    state["exams"] = {}
+    state["exam_store"] = ExamStore(EXAMS_DIR)
+    state["exams"] = state["exam_store"].load()
     yield
     state.clear()
 
@@ -290,6 +293,13 @@ def _build_review(exam: dict) -> list[ReviewQuestion]:
     ]
 
 
+def _save_exam(exam: dict) -> None:
+    try:
+        state["exam_store"].save(exam)
+    except ExamStoreError as exc:
+        raise HTTPException(status_code=500, detail="Could not save exam") from exc
+
+
 @app.get("/books", response_model=BooksResponse)
 def list_books():
     _require_exam_builder_enabled()
@@ -359,7 +369,7 @@ def generate_exam(request: GenerateExamRequest):
         raise HTTPException(status_code=502, detail=f"Could not parse exam from model output: {exc}") from exc
 
     exam_id = str(uuid.uuid4())
-    state["exams"][exam_id] = {
+    exam = {
         "id": exam_id,
         "book": request.book,
         "chapter": request.chapter,
@@ -371,12 +381,14 @@ def generate_exam(request: GenerateExamRequest):
         "description": description if request.generated_from == "description" else None,
         "requested_question_count": request.num_questions,
     }
+    _save_exam(exam)
+    state["exams"][exam_id] = exam
     return GenerateExamResponse(
         id=exam_id,
         book=request.book,
         chapter=request.chapter,
         generated_from=request.generated_from,
-        description=state["exams"][exam_id]["description"],
+        description=exam["description"],
         requested_question_count=request.num_questions,
         questions=[
             ExamQuestion(section=q["section"], question=q["question"], options=q["options"]) for q in questions
@@ -451,8 +463,10 @@ def grade_exam(exam_id: str, request: GradeExamRequest):
 
     answers = {int(index): choice for index, choice in request.answers.items()}
     score = sum(1 for i, q in enumerate(exam["questions"]) if answers.get(i) == q["correct_index"])
-    exam["answers"] = answers
-    exam["score"] = score
+    updated_exam = {**exam, "answers": answers, "score": score}
+    _save_exam(updated_exam)
+    state["exams"][exam_id] = updated_exam
+    exam = updated_exam
 
     return GradeExamResponse(
         id=exam["id"],
