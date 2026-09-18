@@ -15,13 +15,14 @@ uv run pytest src/chunker_test.py -k merge -q # run focused tests
 uv run uvicorn server:app --app-dir src --reload # serve the API on :8000
 uv run python main.py "What is BM25?" --no-answer # rebuild/search without an LLM call
 docker compose up --watch                     # run API (:8000) and UI (:3000), then watch local source changes
+cd frontend && npm run lint                   # check Prettier formatting and ESLint rules
 ```
 
-The frontend has no package manager or build step. When adding a frontend file, ensure `frontend/Dockerfile` explicitly copies it.
+The frontend uses npm for development checks. Run `npm run format` to apply Prettier formatting and `npm run lint` to verify formatting and ESLint rules. When adding a frontend file, ensure `frontend/Dockerfile` explicitly copies it.
 
 ## Coding Style & Naming Conventions
 
-Follow the existing Python style: four-space indentation, `snake_case` for functions, variables, and modules, and `PascalCase` for classes and Pydantic models. Keep backend modules small and use standard-library facilities before adding dependencies. Keep frontend code dependency-free, with camelCase JavaScript identifiers and selectors/classes that reflect their UI role. No formatter or linter is configured; preserve surrounding formatting and avoid unrelated rewrites.
+Follow the existing Python style: four-space indentation, `snake_case` for functions, variables, and modules, and `PascalCase` for classes and Pydantic models. Keep backend modules small and use standard-library facilities before adding dependencies. Keep frontend code dependency-free, with camelCase JavaScript identifiers and selectors/classes that reflect their UI role. Format frontend changes with Prettier and keep `npm run lint` passing; preserve surrounding formatting and avoid unrelated rewrites.
 
 ## Testing Guidelines
 
@@ -32,6 +33,8 @@ Write pytest tests next to the code they cover using the `*_test.py` pattern and
 Use concise, imperative commit subjects consistent with history, for example `Add feature-flagged exam builder` or `Switch retrieval to BM25`. Keep commits scoped. Pull requests should explain user-visible or API changes, identify relevant configuration changes, include test results, link the issue when applicable, and attach screenshots for frontend changes.
 
 After completing and testing a requested feature, commit only the task-related changes, push the feature branch, and open a pull request with the GitHub CLI unless the user explicitly opts out.
+
+Before every `git push` that creates or updates a pull request, run the relevant linter. For frontend changes, this is `cd frontend && npm run lint`.
 
 ## Configuration & Secrets
 
