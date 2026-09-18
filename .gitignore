@@ -16,3 +16,6 @@ frontend/.next/
 
 # Local UI mockups
 docs/ui-mocks/
+
+# Local exam history
+data/
