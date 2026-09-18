@@ -535,14 +535,28 @@ button:disabled {
   background: #f1f1f1;
 }
 .letter {
-  display: inline-grid;
-  width: 24px;
+  display: inline-flex;
+  width: 38px;
   height: 24px;
-  place-items: center;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
   border: 1px solid #999;
   border-radius: 50%;
   font-size: 11px;
   flex: 0 0 auto;
+}
+.exam-nav kbd {
+  display: inline-block;
+  min-width: 1.35em;
+  padding: 0 0.2em;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font:
+    11px "IBM Plex Mono",
+    monospace;
+  line-height: 1.35;
+  text-align: center;
 }
 .exam-nav {
   display: flex;
