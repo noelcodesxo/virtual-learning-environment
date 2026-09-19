@@ -30,6 +30,20 @@ class _FakeDestination:
         self.page_number = page_number
 
 
+class _LegacyOutlineReader(_FakeReader):
+    @property
+    def outline(self):
+        raise AttributeError("outline is unavailable in this reader version")
+
+    @property
+    def outlines(self):
+        return self._legacy_outlines
+
+    def __init__(self, pages, outlines):
+        self.pages = pages
+        self._legacy_outlines = outlines
+
+
 def test_pdf_extractor_creates_page_labeled_chunks(monkeypatch, tmp_path):
     monkeypatch.setattr(
         document_extractors,
@@ -83,6 +97,19 @@ def test_pdf_extractor_maps_outline_chapters_and_sections_to_page_chunks(monkeyp
     }
 
 
+def test_pdf_extractor_supports_legacy_outline_reader_api(monkeypatch, tmp_path):
+    reader = _LegacyOutlineReader(
+        [_FakePage("intro")],
+        [_FakeDestination("1. Introduction", 0)],
+    )
+    monkeypatch.setattr(document_extractors, "PdfReader", lambda path: reader)
+
+    assert PdfExtractor().catalog(tmp_path / "research-paper.pdf") == {
+        "title": "research-paper",
+        "chapters": ["1. Introduction"],
+    }
+
+
 def test_pdf_extractor_uses_a_printed_table_of_contents_when_bookmarks_are_missing(monkeypatch, tmp_path):
     pages = [_FakePage("") for _ in range(31)]
     pages[6] = _FakePage(
@@ -107,3 +134,100 @@ def test_pdf_extractor_uses_a_printed_table_of_contents_when_bookmarks_are_missi
         {"text": "methods", "chapter": "Chapter 2. Methods", "section": None, "book": "book"},
         {"text": "results", "chapter": "Chapter 3. Results", "section": None, "book": "book"},
     ]
+
+
+def test_pdf_extractor_parses_unnumbered_academic_toc_entries(monkeypatch, tmp_path):
+    pages = [_FakePage("") for _ in range(13)]
+    pages[0] = _FakePage(
+        "Contents\nAbstract 1\n1 Introduction 2\n2 Related Work 4\n"
+        "2.1 Prior Studies 5\n3 Methodology 8\nReferences 12\n"
+    )
+    pages[1] = _FakePage("abstract")
+    pages[2] = _FakePage("introduction")
+    pages[4] = _FakePage("related work")
+    pages[5] = _FakePage("prior studies")
+    pages[8] = _FakePage("methodology")
+    pages[12] = _FakePage("references")
+    monkeypatch.setattr(document_extractors, "PdfReader", lambda path: _FakeReader(pages))
+
+    extractor = PdfExtractor()
+
+    assert extractor.catalog(tmp_path / "paper.pdf") == {
+        "title": "paper",
+        "chapters": ["Abstract", "1 Introduction", "2 Related Work", "3 Methodology", "References"],
+    }
+    chunks = extractor.extract_chunks(tmp_path / "paper.pdf")
+    assert [chunk for chunk in chunks if chunk["text"] in {"abstract", "prior studies", "references"}] == [
+        {"text": "abstract", "chapter": "Abstract", "section": None, "book": "paper"},
+        {"text": "prior studies", "chapter": "2 Related Work", "section": "2.1 Prior Studies", "book": "paper"},
+        {"text": "references", "chapter": "References", "section": None, "book": "paper"},
+    ]
+
+
+def test_pdf_extractor_recovers_chapters_from_section_only_bookmarks(monkeypatch, tmp_path):
+    pages = [_FakePage("") for _ in range(24)]
+    pages[2] = _FakePage(
+        "Contents\n1. Systems\n1.1 Overview 5\n2. Networking\n2.1 Overview 10\n"
+    )
+    pages[12] = _FakePage("1.1 Overview\nsystems body")
+    pages[17] = _FakePage("2.1 Overview\nnetworking body")
+    reader = _FakeReader(
+        pages,
+        [[_FakeDestination("1.1 Overview", 5)], [_FakeDestination("2.1 Overview", 10)]],
+    )
+    monkeypatch.setattr(document_extractors, "PdfReader", lambda path: reader)
+
+    extractor = PdfExtractor()
+
+    assert extractor.catalog(tmp_path / "book.pdf") == {
+        "title": "book",
+        "chapters": ["1. Systems", "2. Networking"],
+    }
+    chunks = extractor.extract_chunks(tmp_path / "book.pdf")
+    assert [chunk for chunk in chunks if chunk["text"].endswith("body")] == [
+        {"text": "1.1 Overview\nsystems body", "chapter": "1. Systems", "section": "1.1 Overview", "book": "book"},
+        {"text": "2.1 Overview\nnetworking body", "chapter": "2. Networking", "section": "2.1 Overview", "book": "book"},
+    ]
+
+
+def test_pdf_extractor_keeps_unnumbered_toc_labels_nested_under_chapters(monkeypatch, tmp_path):
+    pages = [_FakePage("") for _ in range(16)]
+    pages[1] = _FakePage(
+        "Contents\n1. Systems\n1.1 Overview 5\nNested label 6\n2. Networking\n2.1 Overview 10\n"
+    )
+    pages[8] = _FakePage("1.1 Overview\nsystems body")
+    pages[13] = _FakePage("2.1 Overview\nnetworking body")
+    monkeypatch.setattr(document_extractors, "PdfReader", lambda path: _FakeReader(pages))
+
+    assert PdfExtractor().catalog(tmp_path / "book.pdf") == {
+        "title": "book",
+        "chapters": ["1. Systems", "2. Networking"],
+    }
+
+
+def test_pdf_extractor_uses_visible_paper_headings_when_metadata_is_missing(monkeypatch, tmp_path):
+    pages = [
+        _FakePage("Paper title\nABSTRACT\nAbstract text\n1 INTRODUCTION\nIntroduction text"),
+        _FakePage("2 RELATED WORK\nRelated text\n2.1 PRIOR WORK\nPrior work text"),
+        _FakePage("REFERENCES\nReference text"),
+    ]
+    monkeypatch.setattr(document_extractors, "PdfReader", lambda path: _FakeReader(pages))
+
+    extractor = PdfExtractor()
+
+    assert extractor.catalog(tmp_path / "paper.pdf") == {
+        "title": "paper",
+        "chapters": ["Abstract", "1 Introduction", "2 Related Work", "References"],
+    }
+    chunks = extractor.extract_chunks(tmp_path / "paper.pdf")
+    assert [chunk for chunk in chunks if chunk["text"].endswith("text")] == [
+        {"text": "Paper title\nABSTRACT\nAbstract text\n1 INTRODUCTION\nIntroduction text", "chapter": "1 Introduction", "section": None, "book": "paper"},
+        {"text": "2 RELATED WORK\nRelated text\n2.1 PRIOR WORK\nPrior work text", "chapter": "2 Related Work", "section": "2.1 Prior Work", "book": "paper"},
+        {"text": "REFERENCES\nReference text", "chapter": "References", "section": None, "book": "paper"},
+    ]
+
+
+def test_pdf_extractor_normalizes_split_uppercase_heading_words():
+    assert PdfExtractor._format_body_heading("9 LIMITATIONS AND THREATS TO V ALIDITY") == (
+        "9 Limitations and Threats to Validity"
+    )
