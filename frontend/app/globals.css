@@ -1048,3 +1048,15 @@ button:disabled {
     font-size: 27px;
   }
 }
+
+@media (max-width: 420px) {
+  .app-rail {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .app-nav {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

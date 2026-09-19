@@ -158,7 +158,7 @@ export function ChatWorkspace() {
               placeholder="Ask a question…"
               autoComplete="off"
             />
-            <button className="send-btn" disabled={isSending} aria-label="Send question">
+            <button className="send-btn" disabled={isSending || !query.trim()} aria-label="Send question">
               →
             </button>
           </div>

@@ -293,6 +293,7 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
                 <button
                   type="button"
                   aria-label="Decrease question count"
+                  disabled={questionCount <= 5}
                   onClick={() => setQuestionCount((count) => Math.max(5, count - 5))}
                 >
                   −
@@ -301,6 +302,7 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
                 <button
                   type="button"
                   aria-label="Increase question count"
+                  disabled={questionCount >= 25}
                   onClick={() => setQuestionCount((count) => Math.min(25, count + 5))}
                 >
                   +

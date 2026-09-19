@@ -217,6 +217,21 @@ def test_lifespan_restores_saved_exams(monkeypatch, tmp_path):
     run(run_lifespan())
 
 
+def test_lifespan_ignores_a_cached_index_without_library_documents(monkeypatch, tmp_path):
+    index_path = tmp_path / "index.json"
+    index_path.write_text('[{"book": "Stale book", "text": "stale chunk"}]')
+    monkeypatch.setattr(server, "INDEX_PATH", index_path)
+    monkeypatch.setattr(server, "EXAMS_DIR", tmp_path / "exams")
+    monkeypatch.setattr(server, "library", _FakeChapterLoader())
+    monkeypatch.setattr(server, "load_index", lambda path: pytest.fail("should not load a stale index"))
+
+    async def run_lifespan():
+        async with server.lifespan(server.app):
+            assert server.state["index"] == []
+
+    run(run_lifespan())
+
+
 def test_list_library_documents_is_available_when_exam_builder_is_disabled(monkeypatch):
     monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", False)
     monkeypatch.setattr(server, "library", _FakeLibrary())
