@@ -203,3 +203,31 @@ def test_pdf_extractor_keeps_unnumbered_toc_labels_nested_under_chapters(monkeyp
         "title": "book",
         "chapters": ["1. Systems", "2. Networking"],
     }
+
+
+def test_pdf_extractor_uses_visible_paper_headings_when_metadata_is_missing(monkeypatch, tmp_path):
+    pages = [
+        _FakePage("Paper title\nABSTRACT\nAbstract text\n1 INTRODUCTION\nIntroduction text"),
+        _FakePage("2 RELATED WORK\nRelated text\n2.1 PRIOR WORK\nPrior work text"),
+        _FakePage("REFERENCES\nReference text"),
+    ]
+    monkeypatch.setattr(document_extractors, "PdfReader", lambda path: _FakeReader(pages))
+
+    extractor = PdfExtractor()
+
+    assert extractor.catalog(tmp_path / "paper.pdf") == {
+        "title": "paper",
+        "chapters": ["Abstract", "1 Introduction", "2 Related Work", "References"],
+    }
+    chunks = extractor.extract_chunks(tmp_path / "paper.pdf")
+    assert [chunk for chunk in chunks if chunk["text"].endswith("text")] == [
+        {"text": "Paper title\nABSTRACT\nAbstract text\n1 INTRODUCTION\nIntroduction text", "chapter": "1 Introduction", "section": None, "book": "paper"},
+        {"text": "2 RELATED WORK\nRelated text\n2.1 PRIOR WORK\nPrior work text", "chapter": "2 Related Work", "section": "2.1 Prior Work", "book": "paper"},
+        {"text": "REFERENCES\nReference text", "chapter": "References", "section": None, "book": "paper"},
+    ]
+
+
+def test_pdf_extractor_normalizes_split_uppercase_heading_words():
+    assert PdfExtractor._format_body_heading("9 LIMITATIONS AND THREATS TO V ALIDITY") == (
+        "9 Limitations and Threats to Validity"
+    )

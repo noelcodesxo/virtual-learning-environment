@@ -24,6 +24,10 @@ NUMBERED_TOC_ENTRY_RE = re.compile(
     r"^(?:chapter\s+)?(?P<number>\d+(?:\.\d+)*)(?:\.|\))?(?:\s+|$)",
     re.IGNORECASE,
 )
+BODY_CHAPTER_HEADING_RE = re.compile(
+    r"^(?:\d+\s+[A-Z][A-Z '\u2019-]+|ABSTRACT|REFERENCES)$"
+)
+BODY_SECTION_HEADING_RE = re.compile(r"^\d+\.\d+\s+[A-Z][A-Za-z '\u2019-]+$")
 PRINTED_PAGE_RE = re.compile(r"^\s*(\d+)\s*$", re.MULTILINE)
 MAX_TOC_SCAN_PAGES = 20
 MAX_TOC_CONTINUATION_PAGES = 20
@@ -133,7 +137,7 @@ class PdfExtractor:
         printed_toc_entries = PdfExtractor._printed_toc_entries(reader)
         if printed_toc_entries and not any(depth == 0 for _, _, depth in entries):
             return printed_toc_entries
-        return entries or printed_toc_entries
+        return entries or printed_toc_entries or PdfExtractor._body_heading_entries(reader)
 
     @staticmethod
     def _printed_toc_entries(reader) -> list[tuple[int, str, int]]:
@@ -228,3 +232,27 @@ class PdfExtractor:
         if not match or title.lower().startswith("chapter "):
             return 0
         return match.group("number").count(".")
+
+    @staticmethod
+    def _body_heading_entries(reader) -> list[tuple[int, str, int]]:
+        """Recover sections from visible paper headings when metadata is absent."""
+        entries = []
+        for page_number, page in enumerate(reader.pages):
+            for line in (page.extract_text() or "").splitlines():
+                title = " ".join(line.split())
+                if BODY_CHAPTER_HEADING_RE.fullmatch(title):
+                    entries.append((page_number, PdfExtractor._format_body_heading(title), 0))
+                elif BODY_SECTION_HEADING_RE.fullmatch(title):
+                    entries.append((page_number, PdfExtractor._format_body_heading(title), 1))
+
+        chapters = [entry for entry in entries if entry[2] == 0]
+        return entries if len(chapters) >= 2 else []
+
+    @staticmethod
+    def _format_body_heading(title: str) -> str:
+        title = re.sub(r"\b([A-Z])\s+([A-Z]{2,})\b", r"\1\2", title)
+        formatted = title.title()
+        for acronym in ("AI", "MCQ", "LLM", "GPT", "LO", "RQ"):
+            formatted = re.sub(rf"\b{acronym.title()}\b", acronym, formatted)
+        formatted = re.sub(r"\b(And|For|To|Of|The|In|On)\b", lambda match: match[0].lower(), formatted)
+        return formatted
