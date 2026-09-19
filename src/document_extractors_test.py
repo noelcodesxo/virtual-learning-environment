@@ -30,6 +30,20 @@ class _FakeDestination:
         self.page_number = page_number
 
 
+class _LegacyOutlineReader(_FakeReader):
+    @property
+    def outline(self):
+        raise AttributeError("outline is unavailable in this reader version")
+
+    @property
+    def outlines(self):
+        return self._legacy_outlines
+
+    def __init__(self, pages, outlines):
+        self.pages = pages
+        self._legacy_outlines = outlines
+
+
 def test_pdf_extractor_creates_page_labeled_chunks(monkeypatch, tmp_path):
     monkeypatch.setattr(
         document_extractors,
@@ -83,6 +97,19 @@ def test_pdf_extractor_maps_outline_chapters_and_sections_to_page_chunks(monkeyp
     }
 
 
+def test_pdf_extractor_supports_legacy_outline_reader_api(monkeypatch, tmp_path):
+    reader = _LegacyOutlineReader(
+        [_FakePage("intro")],
+        [_FakeDestination("1. Introduction", 0)],
+    )
+    monkeypatch.setattr(document_extractors, "PdfReader", lambda path: reader)
+
+    assert PdfExtractor().catalog(tmp_path / "research-paper.pdf") == {
+        "title": "research-paper",
+        "chapters": ["1. Introduction"],
+    }
+
+
 def test_pdf_extractor_uses_a_printed_table_of_contents_when_bookmarks_are_missing(monkeypatch, tmp_path):
     pages = [_FakePage("") for _ in range(31)]
     pages[6] = _FakePage(
@@ -106,4 +133,32 @@ def test_pdf_extractor_uses_a_printed_table_of_contents_when_bookmarks_are_missi
         {"text": "basics", "chapter": "Chapter 1. Basics", "section": "1.1. First Topic", "book": "book"},
         {"text": "methods", "chapter": "Chapter 2. Methods", "section": None, "book": "book"},
         {"text": "results", "chapter": "Chapter 3. Results", "section": None, "book": "book"},
+    ]
+
+
+def test_pdf_extractor_parses_unnumbered_academic_toc_entries(monkeypatch, tmp_path):
+    pages = [_FakePage("") for _ in range(13)]
+    pages[0] = _FakePage(
+        "Contents\nAbstract 1\n1 Introduction 2\n2 Related Work 4\n"
+        "2.1 Prior Studies 5\n3 Methodology 8\nReferences 12\n"
+    )
+    pages[1] = _FakePage("abstract")
+    pages[2] = _FakePage("introduction")
+    pages[4] = _FakePage("related work")
+    pages[5] = _FakePage("prior studies")
+    pages[8] = _FakePage("methodology")
+    pages[12] = _FakePage("references")
+    monkeypatch.setattr(document_extractors, "PdfReader", lambda path: _FakeReader(pages))
+
+    extractor = PdfExtractor()
+
+    assert extractor.catalog(tmp_path / "paper.pdf") == {
+        "title": "paper",
+        "chapters": ["Abstract", "1 Introduction", "2 Related Work", "3 Methodology", "References"],
+    }
+    chunks = extractor.extract_chunks(tmp_path / "paper.pdf")
+    assert [chunk for chunk in chunks if chunk["text"] in {"abstract", "prior studies", "references"}] == [
+        {"text": "abstract", "chapter": "Abstract", "section": None, "book": "paper"},
+        {"text": "prior studies", "chapter": "2 Related Work", "section": "2.1 Prior Studies", "book": "paper"},
+        {"text": "references", "chapter": "References", "section": None, "book": "paper"},
     ]
