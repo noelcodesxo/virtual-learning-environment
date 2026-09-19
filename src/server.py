@@ -40,7 +40,14 @@ library = LibraryService(RESOURCES_DIR, INDEX_PATH)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    state["index"] = load_index(INDEX_PATH) if INDEX_PATH.exists() else library.build_index()
+    # The persisted index is only valid while it has source documents to back
+    # it. This keeps a stale index from answering chat requests after the
+    # resource library has been emptied.
+    books = library.list_books()
+    if not books:
+        state["index"] = []
+    else:
+        state["index"] = load_index(INDEX_PATH) if INDEX_PATH.exists() else library.build_index()
     state["retriever"] = Retriever()
     state["chapter_loader"] = library
     state["exam_store"] = ExamStore(EXAMS_DIR)
