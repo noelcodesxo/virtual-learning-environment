@@ -189,7 +189,7 @@ def test_list_models_raises_502_when_ollama_unreachable(monkeypatch):
     assert exc_info.value.status_code == 502
 
 
-def test_chat_returns_answer_and_sources_from_retrieved_chunks(monkeypatch):
+def test_chat_returns_answer_sources_and_safe_debug_ranking_metadata(monkeypatch, caplog):
     results = [
         {
             "book": "AI Engineering",
@@ -203,12 +203,17 @@ def test_chat_returns_answer_and_sources_from_retrieved_chunks(monkeypatch):
     monkeypatch.setitem(server.state, "retriever", _FakeRetriever(results))
     monkeypatch.setattr(server, "build_client", lambda provider, model, base_url=None: _FakeClient("the answer"))
 
+    caplog.set_level(logging.DEBUG, logger="vle.api.routes.chat")
     response = chat(ChatRequest(query="what is RLHF?", model="qwen3:8b"))
 
     assert response.answer == "the answer"
     assert response.sources == [
         server.Source(book="AI Engineering", chapter="Ch. 4", section="RLHF", score=0.82)
     ]
+    assert "score" in caplog.text
+    assert "AI Engineering" in caplog.text
+    assert "what is RLHF?" not in caplog.text
+    assert "rlhf trains a reward model" not in caplog.text
 
 
 def test_chat_rejects_empty_query():
@@ -288,7 +293,6 @@ def test_lifespan_restores_saved_exams(monkeypatch, tmp_path):
     index_path.write_text("[]")
     monkeypatch.setattr(server, "EXAMS_DIR", exams_dir)
     monkeypatch.setattr(server, "INDEX_PATH", index_path)
-    monkeypatch.setattr(server, "load_index", lambda path: [])
 
     async def run_lifespan():
         async with server.lifespan(server.app):
@@ -303,7 +307,6 @@ def test_lifespan_ignores_a_cached_index_without_library_documents(monkeypatch, 
     monkeypatch.setattr(server, "INDEX_PATH", index_path)
     monkeypatch.setattr(server, "EXAMS_DIR", tmp_path / "exams")
     monkeypatch.setattr(server, "library", _FakeChapterLoader())
-    monkeypatch.setattr(server, "load_index", lambda path: pytest.fail("should not load a stale index"))
 
     async def run_lifespan():
         async with server.lifespan(server.app):
@@ -331,6 +334,9 @@ class _FakeChapterLoader:
 
     def list_books(self):
         return self._books
+
+    def initialize(self, index_path):
+        return []
 
     def load_chapter_text(self, book, chapter):
         if self._missing:

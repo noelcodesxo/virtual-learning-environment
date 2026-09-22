@@ -1,6 +1,8 @@
 import json
 import math
+import os
 from pathlib import Path
+import tempfile
 
 class Indexer():
     _K1 = 1.2 # 0 - 2, 0 = no term frequency saturation, 2 = full saturation
@@ -14,16 +16,15 @@ class Indexer():
         bm25_tf: list[dict[str, float]] = [self._term_frequencies(chunk["text"], average_chunk_length) for chunk in chunks]
         bm25_idf = self._inverse_document_frequencies(bm25_tf, len(chunks))
 
-        return [
-            {
-                "book": chunk.get("book"),
-                "chapter": chunk.get("chapter"),
-                "section": chunk.get("section"),
-                "text": chunk.get("text"),
-                "bm25": {term: tf * bm25_idf[term] for term, tf in tf_map.items()},
-            }
-            for chunk, tf_map in zip(chunks, bm25_tf)
-        ]
+        indexed = []
+        for chunk, tf_map in zip(chunks, bm25_tf):
+            # Source identity is retained so the library can safely reuse
+            # extracted text on later startups. BM25 itself is intentionally
+            # always derived from the complete current corpus.
+            entry = {key: value for key, value in chunk.items() if key != "bm25"}
+            entry["bm25"] = {term: tf * bm25_idf[term] for term, tf in tf_map.items()}
+            indexed.append(entry)
+        return indexed
 
     def _term_frequencies(self, text: str, average_chunk_length: float) -> dict[str, float]:
         terms = text.split()
@@ -55,8 +56,21 @@ class Indexer():
         }
 
     def save(self, indexed: list[dict], path: str | Path) -> None:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(indexed, f, indent=2)
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", dir=output_path.parent, delete=False
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+                json.dump(indexed, temporary_file, indent=2)
+                temporary_file.flush()
+                os.fsync(temporary_file.fileno())
+            temporary_path.replace(output_path)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
     def _compute_chunk_average(self, chunks: list[object]) -> float:
         total_length = sum(len(chunk["text"].split()) for chunk in chunks)

@@ -1,4 +1,5 @@
 import json
+import logging
 import urllib.error
 import urllib.request
 
@@ -10,6 +11,7 @@ from vle.llm.clients import build_client
 from vle.rag.prompts import build_rag_messages
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def fetch_ollama_models(base_url: str) -> list[str]:
@@ -33,6 +35,21 @@ def chat(request: ChatRequest):
         raise HTTPException(status_code=400, detail="query must not be empty")
 
     results = state["retriever"].search(request.query, state["index"])
+    logger.debug(
+        "Retrieved ranked source metadata: %s",
+        [
+            {
+                "rank": rank,
+                "score": result.get("score"),
+                "book": result.get("book"),
+                "chapter": result.get("chapter"),
+                "section": result.get("section"),
+                "source_path": result.get("source_path"),
+                "source_ordinal": result.get("source_ordinal"),
+            }
+            for rank, result in enumerate(results, start=1)
+        ],
+    )
     messages = build_rag_messages(request.query, results)
     client = build_client("ollama", request.model, base_url=OLLAMA_BASE_URL)
 

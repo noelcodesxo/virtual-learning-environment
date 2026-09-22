@@ -1,9 +1,11 @@
 from asyncio import run
+import json
 from pathlib import Path
 
 import pytest
 
 from vle.library.service import DeleteResult, LibraryError, LibraryService
+from vle.rag.indexing import Indexer
 
 
 class _FakeExtractor:
@@ -43,6 +45,28 @@ class _PdfExtractor(_FakeExtractor):
     extensions = frozenset({".pdf"})
 
 
+class _FileTextExtractor:
+    extensions = frozenset({".epub"})
+
+    def __init__(self, split_chunks=False, error=None):
+        self.split_chunks = split_chunks
+        self.error = error
+        self.paths = []
+
+    def extract_chunks(self, path: Path) -> list[dict]:
+        self.paths.append(path)
+        if self.error:
+            raise self.error
+        texts = path.read_text().split("|") if self.split_chunks else [path.read_text()]
+        return [
+            {"book": path.stem, "chapter": None, "section": None, "text": text}
+            for text in texts
+        ]
+
+    def catalog(self, path: Path) -> dict:
+        return {"title": path.stem, "chapters": []}
+
+
 class _FakeUpload:
     def __init__(self, chunks):
         self.chunks = chunks
@@ -70,6 +94,167 @@ def test_build_index_uses_registered_extractors_for_supported_documents(tmp_path
     assert extractor.paths == [service.resources_dir / "book.epub"]
     assert indexed[0]["text"] == "source text"
     assert service.index_path.exists()
+
+
+def test_synchronize_index_reuses_verified_source_chunks_on_restart(tmp_path):
+    extractor = _FileTextExtractor()
+    service = _service(tmp_path, extractor)
+    service.resources_dir.mkdir()
+    (service.resources_dir / "book.epub").write_text("Original source")
+
+    first_index = service.synchronize_index()
+    second_index = service.synchronize_index()
+
+    assert extractor.paths == [service.resources_dir / "book.epub"]
+    assert second_index == first_index
+    assert first_index[0]["source_path"] == "book.epub"
+    assert first_index[0]["source_chunk_count"] == 1
+    assert first_index[0]["source_ordinal"] == 0
+    assert len(first_index[0]["source_sha256"]) == 64
+
+
+def test_synchronize_index_repairs_partial_and_duplicate_source_ordinals(tmp_path):
+    extractor = _FileTextExtractor(split_chunks=True)
+    service = _service(tmp_path, extractor)
+    service.resources_dir.mkdir()
+    (service.resources_dir / "book.epub").write_text("first|second")
+    indexed = service.synchronize_index()
+
+    service.index_path.write_text(json.dumps([indexed[0]]))
+    repaired = service.synchronize_index()
+    service.index_path.write_text(json.dumps(repaired + [repaired[0]]))
+    deduplicated = service.synchronize_index()
+
+    assert extractor.paths == [service.resources_dir / "book.epub"] * 3
+    assert [chunk["source_ordinal"] for chunk in deduplicated] == [0, 1]
+    assert len(deduplicated) == 2
+
+
+def test_synchronize_index_reextracts_changed_files_and_reweights_bm25_globally(tmp_path):
+    extractor = _FileTextExtractor()
+    service = _service(tmp_path, extractor)
+    service.resources_dir.mkdir()
+    first = service.resources_dir / "first.epub"
+    second = service.resources_dir / "second.epub"
+    first.write_text("alpha")
+    second.write_text("bravo")
+
+    initial = service.synchronize_index()
+    second.write_text("charlie")
+    changed = service.synchronize_index()
+    (service.resources_dir / "third.epub").write_text("delta")
+    reweighted = service.synchronize_index()
+
+    assert extractor.paths.count(second) == 2
+    assert next(chunk for chunk in changed if chunk["source_path"] == "second.epub")["text"] == "charlie"
+    assert next(chunk for chunk in initial if chunk["source_path"] == "first.epub")["bm25"]["alpha"] == 0
+    assert next(chunk for chunk in reweighted if chunk["source_path"] == "first.epub")["bm25"]["alpha"] > 0
+
+
+def test_synchronize_index_removes_stale_source_chunks(tmp_path):
+    extractor = _FileTextExtractor()
+    service = _service(tmp_path, extractor)
+    service.resources_dir.mkdir()
+    (service.resources_dir / "keep.epub").write_text("keep")
+    removed = service.resources_dir / "remove.epub"
+    removed.write_text("remove")
+    service.synchronize_index()
+
+    removed.unlink()
+    indexed = service.synchronize_index()
+
+    assert [chunk["source_path"] for chunk in indexed] == ["keep.epub"]
+
+
+def test_synchronize_index_rebuilds_legacy_and_corrupt_indexes(tmp_path, caplog):
+    extractor = _FileTextExtractor()
+    service = _service(tmp_path, extractor)
+    service.resources_dir.mkdir()
+    (service.resources_dir / "book.epub").write_text("current")
+    service.index_path.write_text(json.dumps([{"book": "old", "text": "stale", "bm25": {}}]))
+
+    legacy_rebuilt = service.synchronize_index()
+    service.index_path.write_text("not json")
+    corrupt_rebuilt = service.synchronize_index()
+
+    assert [chunk["text"] for chunk in legacy_rebuilt] == ["current"]
+    assert [chunk["text"] for chunk in corrupt_rebuilt] == ["current"]
+    assert extractor.paths == [service.resources_dir / "book.epub"] * 2
+    assert "Could not read persisted library index" in caplog.text
+
+
+def test_synchronize_index_preserves_existing_file_when_extraction_or_save_fails(monkeypatch, tmp_path):
+    extractor = _FileTextExtractor()
+    service = _service(tmp_path, extractor)
+    service.resources_dir.mkdir()
+    document = service.resources_dir / "book.epub"
+    document.write_text("original")
+    service.synchronize_index()
+    original_index = service.index_path.read_text()
+    document.write_text("changed")
+    extractor.error = ValueError("cannot extract")
+
+    with pytest.raises(ValueError, match="cannot extract"):
+        service.synchronize_index()
+    assert service.index_path.read_text() == original_index
+
+    extractor.error = None
+    monkeypatch.setattr(Indexer, "save", lambda *args: (_ for _ in ()).throw(OSError("disk full")))
+    with pytest.raises(OSError, match="disk full"):
+        service.synchronize_index()
+    assert service.index_path.read_text() == original_index
+
+
+def test_synchronize_index_persists_an_empty_index_for_an_empty_library(tmp_path):
+    service = _service(tmp_path, _FileTextExtractor())
+    service.index_path.write_text(json.dumps([{"source_path": "gone.epub", "text": "stale"}]))
+
+    assert service.synchronize_index() == []
+    assert json.loads(service.index_path.read_text()) == []
+
+
+def test_initialize_migrates_legacy_resources_once_without_resurrecting_deleted_files(tmp_path):
+    legacy_dir = tmp_path / "legacy"
+    legacy_dir.mkdir()
+    (legacy_dir / "book.epub").write_text("legacy source")
+    resources_dir = tmp_path / "data" / "resources"
+    marker = tmp_path / "data" / "migration-complete"
+    service = LibraryService(
+        resources_dir,
+        tmp_path / "data" / "index.json",
+        [_FileTextExtractor()],
+        legacy_resources_dir=legacy_dir,
+        migration_marker_path=marker,
+    )
+
+    first_index = service.initialize()
+    (resources_dir / "book.epub").unlink()
+    second_index = service.initialize()
+
+    assert marker.exists()
+    assert [chunk["text"] for chunk in first_index] == ["legacy source"]
+    assert second_index == []
+    assert not (resources_dir / "book.epub").exists()
+
+
+def test_initialize_legacy_migration_keeps_existing_persistent_files(tmp_path):
+    legacy_dir = tmp_path / "legacy"
+    legacy_dir.mkdir()
+    (legacy_dir / "book.epub").write_text("legacy source")
+    resources_dir = tmp_path / "data" / "resources"
+    resources_dir.mkdir(parents=True)
+    (resources_dir / "book.epub").write_text("persistent source")
+    service = LibraryService(
+        resources_dir,
+        tmp_path / "data" / "index.json",
+        [_FileTextExtractor()],
+        legacy_resources_dir=legacy_dir,
+    )
+
+    indexed = service.initialize()
+
+    assert (resources_dir / "book.epub").read_text() == "persistent source"
+    assert [chunk["text"] for chunk in indexed] == ["persistent source"]
 
 
 def test_upload_saves_a_supported_document_and_refreshes_the_index(monkeypatch, tmp_path):

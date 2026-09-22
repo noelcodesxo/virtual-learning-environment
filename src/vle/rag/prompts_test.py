@@ -20,10 +20,11 @@ def test_build_rag_messages_includes_chunk_text_and_metadata():
     assert "section: Intro" in content
 
 
-def test_build_rag_messages_includes_score_formatted_to_4_decimals():
+def test_build_rag_messages_excludes_retrieval_score():
     chunks = [{"book": "Book A", "chapter": "Ch1", "section": "Intro", "text": "some fact", "score": 0.123456}]
     content = build_rag_messages("q", chunks)[1]["content"]
-    assert "score: 0.1235" in content
+    assert "score" not in content
+    assert "0.123456" not in content
 
 
 def test_build_rag_messages_omits_missing_section():

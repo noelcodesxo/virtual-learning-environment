@@ -18,6 +18,8 @@ services:
     environment:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - LLM_MODEL=qwen3:8b
+      - RESOURCES_DIR=/app/data/resources
+      - INDEX_PATH=/app/data/index.json
       - EXAMS_DIR=/app/data/exams
     volumes:
       - ./data:/app/data

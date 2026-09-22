@@ -2,11 +2,15 @@ import uuid
 from asyncio import Lock
 from collections.abc import AsyncIterable, Iterable
 from dataclasses import dataclass
+import hashlib
+import logging
 from pathlib import Path
 import re
+import shutil
 
 from vle.library.extractors import DocumentExtractor, ENTIRE_DOCUMENT_CHAPTER, EpubExtractor, PdfExtractor
 from vle.rag.indexing import Indexer
+from vle.rag.index_loader import load_index
 from vle.rag.preprocessing import PreProcessor
 
 
@@ -14,6 +18,9 @@ DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 EXAM_CHUNK_SIZE = 1600
 EXAM_CHUNK_OVERLAP = 200
 MAX_EXAM_SOURCE_CHUNKS = 12
+LEGACY_MIGRATION_MARKER = ".legacy-resources-migrated"
+
+logger = logging.getLogger(__name__)
 
 
 class LibraryError(Exception):
@@ -44,6 +51,8 @@ class LibraryService:
         index_path: Path,
         extractors: Iterable[DocumentExtractor] | None = None,
         max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES,
+        legacy_resources_dir: Path | None = None,
+        migration_marker_path: Path | None = None,
     ):
         self.resources_dir = Path(resources_dir)
         self.index_path = Path(index_path)
@@ -51,20 +60,141 @@ class LibraryService:
         self._extractors = self._build_extractor_registry(extractors or [EpubExtractor(), PdfExtractor()])
         self._catalog_cache: dict[Path, tuple[tuple[int, int], dict]] = {}
         self._lock = Lock()
+        self.legacy_resources_dir = Path(legacy_resources_dir) if legacy_resources_dir else None
+        self.migration_marker_path = (
+            Path(migration_marker_path)
+            if migration_marker_path
+            else self.resources_dir.parent / LEGACY_MIGRATION_MARKER
+        )
 
     def build_index(self) -> list[dict]:
-        chunks = []
-        for path in self._resource_paths():
-            chunks.extend(self._extractors[path.suffix.lower()].extract_chunks(path))
+        """Refresh the index while reusing verified persisted source chunks."""
+        return self.synchronize_index()
+
+    def initialize(self, index_path: Path | None = None) -> list[dict]:
+        """Migrate legacy files once, then bring the persisted index up to date."""
+        self._migrate_legacy_resources()
+        return self.synchronize_index(index_path)
+
+    def synchronize_index(self, index_path: Path | None = None) -> list[dict]:
+        """Incrementally rebuild the persisted index from the current library.
+
+        The existing file remains untouched if extraction or persistence fails.
+        """
+        output_path = Path(index_path) if index_path else self.index_path
+        resources = self._resource_paths()
+        existing, requires_rebuild = self._load_existing_index(output_path)
+        current_paths = {self._relative_source_path(path): path for path in resources}
+
+        chunks_by_source: dict[str, list[dict]] = {}
+        if not requires_rebuild:
+            for chunk in existing:
+                source_path = chunk.get("source_path")
+                if isinstance(source_path, str):
+                    chunks_by_source.setdefault(source_path, []).append(chunk)
+
+        reusable_chunks: dict[str, list[dict]] = {}
+        for source_path, path in current_paths.items():
+            candidate_chunks = chunks_by_source.get(source_path, [])
+            digest = self._file_digest(path)
+            if not requires_rebuild and self._source_chunks_are_valid(candidate_chunks, source_path, digest):
+                reusable_chunks[source_path] = candidate_chunks
 
         preprocessor = PreProcessor()
-        for chunk in chunks:
-            chunk["text"] = preprocessor.process(chunk["text"])
+        all_chunks: list[dict] = []
+        for source_path, path in current_paths.items():
+            chunks = reusable_chunks.get(source_path)
+            if chunks is None:
+                chunks = self._extract_source_chunks(path, source_path, preprocessor)
+            all_chunks.extend(sorted(chunks, key=lambda chunk: chunk["source_ordinal"]))
 
         indexer = Indexer()
-        indexed = indexer.index(chunks)
-        indexer.save(indexed, self.index_path)
+        indexed = indexer.index(all_chunks)
+        indexer.save(indexed, output_path)
         return indexed
+
+    def _load_existing_index(self, path: Path) -> tuple[list[dict], bool]:
+        if not path.exists():
+            return [], False
+        try:
+            loaded = load_index(path)
+        except (OSError, ValueError, TypeError) as exc:
+            logger.warning("Could not read persisted library index; rebuilding it: %s", exc)
+            return [], True
+        if not isinstance(loaded, list) or not all(isinstance(chunk, dict) for chunk in loaded):
+            logger.warning("Persisted library index has an invalid shape; rebuilding it")
+            return [], True
+        if loaded and any("source_path" not in chunk for chunk in loaded):
+            logger.info("Persisted library index has no source identity; rebuilding it once")
+            return [], True
+        return loaded, False
+
+    def _extract_source_chunks(
+        self, path: Path, source_path: str, preprocessor: PreProcessor
+    ) -> list[dict]:
+        digest = self._file_digest(path)
+        extracted = self._extractors[path.suffix.lower()].extract_chunks(path)
+        expected_count = len(extracted)
+        return [
+            {
+                **chunk,
+                "text": preprocessor.process(chunk["text"]),
+                "source_path": source_path,
+                "source_sha256": digest,
+                "source_chunk_count": expected_count,
+                "source_ordinal": ordinal,
+            }
+            for ordinal, chunk in enumerate(extracted)
+        ]
+
+    @staticmethod
+    def _source_chunks_are_valid(chunks: list[dict], source_path: str, digest: str) -> bool:
+        if not chunks:
+            return False
+        expected_count = len(chunks)
+        ordinals: list[int] = []
+        for chunk in chunks:
+            if (
+                chunk.get("source_path") != source_path
+                or chunk.get("source_sha256") != digest
+                or chunk.get("source_chunk_count") != expected_count
+                or not isinstance(chunk.get("source_ordinal"), int)
+                or not isinstance(chunk.get("text"), str)
+            ):
+                return False
+            ordinals.append(chunk["source_ordinal"])
+        return sorted(ordinals) == list(range(expected_count))
+
+    def _migrate_legacy_resources(self) -> None:
+        legacy_dir = self.legacy_resources_dir
+        if (
+            legacy_dir is None
+            or legacy_dir.resolve() == self.resources_dir.resolve()
+            or self.migration_marker_path.exists()
+        ):
+            return
+
+        self.resources_dir.mkdir(parents=True, exist_ok=True)
+        if legacy_dir.exists():
+            for source in sorted(legacy_dir.iterdir()):
+                if not source.is_file() or source.suffix.lower() not in self._extractors:
+                    continue
+                destination = self.resources_dir / source.name
+                if not destination.exists():
+                    shutil.copy2(source, destination)
+        self.migration_marker_path.parent.mkdir(parents=True, exist_ok=True)
+        self.migration_marker_path.touch(exist_ok=False)
+
+    def _relative_source_path(self, path: Path) -> str:
+        return path.relative_to(self.resources_dir).as_posix()
+
+    @staticmethod
+    def _file_digest(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as source:
+            for block in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(block)
+        return digest.hexdigest()
 
     def list_books(self) -> list[dict]:
         return [self._catalog(path) for path in self._resource_paths()]
