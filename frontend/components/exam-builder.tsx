@@ -272,7 +272,7 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
           {exam ? `${exam.source} · ${exam.chapter}` : stage === "history" ? "Recent exams" : "New exam"}
         </span>
         <div className="exam-header-actions">
-          <Link className="header-action" href="/exams">
+          <Link className="header-action" href="/exams" onClick={initialView === "configure" ? reset : undefined}>
             New exam
           </Link>
           <Link className="header-action" href="/exams/history">
