@@ -6,10 +6,78 @@ from asyncio import run
 import pytest
 from fastapi import BackgroundTasks, HTTPException
 
-import vle.api.app as server
+from vle.api import app as application
+from vle.api import runtime
+from vle.api.routes import chat as chat_routes
+from vle.api.routes import exams as exam_routes
+from vle.api.routes import features as feature_routes
+from vle.api.routes import library as library_routes
 from vle.exams.store import ExamStore, ExamStoreError
 from vle.library.service import DeleteResult, LibraryError, UploadResult
-from vle.api.app import ChatRequest, chat, list_models
+from vle.api.routes.chat import ChatRequest, chat, list_models
+
+
+class _LiveHandlers:
+    """Expose the live routes through the old test seams during the move."""
+
+    _chat_names = {
+        "ChatRequest", "ChatResponse", "ModelsResponse", "Source", "fetch_ollama_models",
+        "list_models", "chat", "urllib",
+    }
+    _library_names = {
+        "UploadResponse", "DeleteResponse", "LibraryDocument", "LibraryResponse",
+        "upload_library_file", "delete_library_file", "list_library_documents",
+    }
+    _feature_names = {"FeaturesResponse", "get_features"}
+    _runtime_names = {
+        "state", "library", "lifespan", "INDEX_PATH", "EXAMS_DIR", "EXAM_JOBS_DIR",
+        "DEFAULT_MODEL", "load_index",
+    }
+
+    def __getattr__(self, name):
+        if name == "app":
+            return application.app
+        if name in self._chat_names:
+            return getattr(chat_routes, name)
+        if name in self._library_names:
+            return getattr(library_routes, name)
+        if name in self._feature_names:
+            return getattr(feature_routes, name)
+        if name in self._runtime_names:
+            return getattr(runtime, name)
+        return getattr(exam_routes, name)
+
+    def __setattr__(self, name, value):
+        if name.startswith("_"):
+            return super().__setattr__(name, value)
+        if name == "build_client":
+            chat_routes.build_client = value
+            exam_routes.build_client = value
+            return
+        if name == "library":
+            runtime.library = value
+            library_routes.library = value
+            return
+        if name == "EXAM_BUILDER_ENABLED":
+            feature_routes.EXAM_BUILDER_ENABLED = value
+            exam_routes.EXAM_BUILDER_ENABLED = value
+            return
+        if name in self._runtime_names:
+            setattr(runtime, name, value)
+            return
+        if name in self._chat_names:
+            setattr(chat_routes, name, value)
+            return
+        if name in self._library_names:
+            setattr(library_routes, name, value)
+            return
+        if name in self._feature_names:
+            setattr(feature_routes, name, value)
+            return
+        setattr(exam_routes, name, value)
+
+
+server = _LiveHandlers()
 
 
 class _FakeResponse:
