@@ -21,6 +21,7 @@ def test_api_route_paths_and_methods_remain_compatible():
         ("/library", "GET"), ("/library/{filename}", "DELETE"), ("/features", "GET"),
         ("/books", "GET"), ("/exams/resolve-description", "POST"), ("/exams", "POST"),
         ("/exams", "GET"), ("/exams/{exam_id}", "GET"), ("/exams/{exam_id}/grade", "POST"),
+        ("/exam-jobs", "POST"), ("/exam-jobs", "GET"), ("/exam-jobs/{job_id}", "GET"),
     } <= paths_and_methods
 
 

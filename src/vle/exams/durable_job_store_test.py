@@ -1,6 +1,6 @@
 import json
 
-from exam_job_store import ExamJobStore
+from vle.exams.durable_job_store import ExamJobStore
 
 
 def _job(**overrides):

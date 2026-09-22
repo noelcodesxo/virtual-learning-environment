@@ -1,6 +1,8 @@
 import json
 import re
 
+from vle.core.templates import load_template, render_template
+
 
 TOPIC_MAP_JSON_SCHEMA = {
     "type": "object",
@@ -38,18 +40,10 @@ TOPIC_MAP_JSON_EXAMPLE = json.dumps(
     ensure_ascii=False,
 )
 
-TOPIC_MAP_SYSTEM_PROMPT = (
-    "You create a compact content map for an exam writer. Read only the supplied "
-    "source excerpts. Identify the most important, distinct topics that are useful "
-    "for assessing the chapter. Do not use outside knowledge or infer facts that "
-    "are not in the excerpts. Prefer central concepts, relationships, processes, "
-    "trade-offs, and skills over trivia.\n\n"
-    "Respond with ONLY one JSON object, no prose, markdown fences, analysis, or "
-    "explanation. Your response must begin with `{` and end with `}`. It must "
-    "match this exact JSON shape and field names:\n"
-    + TOPIC_MAP_JSON_EXAMPLE
-    + "\n\nReturn 1 to 12 topics. Keep each summary and quotation short. Do not "
-    "include placeholder text from the example; replace every value with source-grounded content."
+TOPIC_MAP_SYSTEM_PROMPT = render_template(
+    load_template("vle.exams.prompt_templates", "topic_map_system.md"),
+    allowed={"topic_map_json_example"},
+    values={"topic_map_json_example": TOPIC_MAP_JSON_EXAMPLE},
 )
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)

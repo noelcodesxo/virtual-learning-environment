@@ -6,10 +6,10 @@ from asyncio import run
 import pytest
 from fastapi import BackgroundTasks, HTTPException
 
-import server
-from exam_store import ExamStore, ExamStoreError
-from library import DeleteResult, LibraryError, UploadResult
-from server import ChatRequest, chat, list_models
+import vle.api.legacy as server
+from vle.exams.store import ExamStore, ExamStoreError
+from vle.library.service import DeleteResult, LibraryError, UploadResult
+from vle.api.legacy import ChatRequest, chat, list_models
 
 
 class _FakeResponse:

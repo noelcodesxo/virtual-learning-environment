@@ -12,6 +12,8 @@ def test_selection_messages_include_catalog_and_description():
     assert "Available catalog" in messages[1]["content"]
     assert "AI Engineering" in messages[1]["content"]
     assert "Use the second chapter." in messages[1]["content"]
+    assert "single best source chapter" in messages[0]["content"]
+    assert "compact content map" not in messages[0]["content"]
 
 
 def test_parse_selection_requires_an_exact_catalog_match():

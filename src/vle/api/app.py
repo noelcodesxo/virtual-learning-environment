@@ -46,3 +46,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
+
+# The feature-complete API currently lives in ``legacy`` while its route
+# workflows are being extracted. Keep both package entrypoints on the same
+# application so deployment cannot silently lose exam-job behavior.
+from vle.api.legacy import app as app

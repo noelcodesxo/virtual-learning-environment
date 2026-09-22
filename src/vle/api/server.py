@@ -1,5 +1,3 @@
-"""Compatibility module for the canonical :mod:`vle.api.app` entrypoint."""
+"""Canonical package ASGI entrypoint while route extraction is completed."""
 
-from vle.api.app import app, create_app
-
-__all__ = ["app", "create_app"]
+from vle.api.legacy import *  # noqa: F403

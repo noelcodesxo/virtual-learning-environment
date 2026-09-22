@@ -7,7 +7,7 @@ from vle.core.templates import load_template, render_template
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 
 EXAM_SELECTION_SYSTEM_PROMPT = render_template(
-    load_template("vle.exams.prompt_templates", "topic_map_system.md"), allowed=set(), values={}
+    load_template("vle.exams.prompt_templates", "selection_system.md"), allowed=set(), values={}
 ).strip()
 
 

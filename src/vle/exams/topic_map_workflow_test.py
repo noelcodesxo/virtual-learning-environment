@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from exam_topic_map import TOPIC_MAP_JSON_EXAMPLE, TOPIC_MAP_JSON_SCHEMA, build_topic_map_messages, parse_topic_map_json
+from vle.exams.topic_map_workflow import TOPIC_MAP_JSON_EXAMPLE, TOPIC_MAP_JSON_SCHEMA, build_topic_map_messages, parse_topic_map_json
 
 
 CHAPTER_TEXT = "A reward model is trained from human preferences. Evaluation measures helpfulness."
@@ -30,6 +30,8 @@ def test_build_topic_map_messages_includes_selected_source_text():
     ]
     assert "AI Engineering" in messages[1]["content"]
     assert CHAPTER_TEXT in messages[1]["content"]
+    assert "compact content map" in messages[0]["content"]
+    assert "single best source chapter" not in messages[0]["content"]
 
 
 def test_parse_topic_map_json_accepts_fenced_grounded_json():

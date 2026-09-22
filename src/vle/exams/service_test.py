@@ -27,7 +27,7 @@ class _Client:
 
 
 def _question():
-    return {"section": "Section", "question": "Question?", "options": ["A", "B", "C", "D"], "correct_index": 1, "why": "B is correct."}
+    return {"section": "Section", "question": "Question?", "options": ["A", "B", "C"], "correct_index": 1, "why": "B is correct."}
 
 
 def _service(tmp_path, response=None):
