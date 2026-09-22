@@ -3,7 +3,7 @@ import os
 import pytest
 
 from vle.core.templates import TemplateContractError, load_template, render_template
-from vle.exams.prompts import build_exam_messages
+from vle.exams.bloom_prompts import build_exam_messages
 from vle.rag.prompts import build_rag_messages
 
 
@@ -33,7 +33,7 @@ def test_template_contracts_reject_invalid_placeholder_usage(template, allowed, 
 
 def test_prompt_builders_return_a_system_and_user_message():
     rag_messages = build_rag_messages("What is BM25?", [])
-    exam_messages = build_exam_messages("Book", "Chapter", "source", 1)
+    exam_messages = build_exam_messages("Book", "Chapter", "source", 1, {"topics": []}, ["remember"])
 
     assert [message["role"] for message in rag_messages] == ["system", "user"]
     assert [message["role"] for message in exam_messages] == ["system", "user"]

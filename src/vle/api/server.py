@@ -1,3 +1,5 @@
-"""Canonical package ASGI entrypoint while route extraction is completed."""
+"""Backward-compatible package import for the canonical application."""
 
-from vle.api.legacy import *  # noqa: F403
+from vle.api.app import app
+
+__all__ = ["app"]

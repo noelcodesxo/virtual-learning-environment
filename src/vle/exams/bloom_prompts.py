@@ -1,5 +1,7 @@
 import json
 
+from vle.core.templates import load_template, render_template
+
 
 BLOOM_QUESTION_EXAMPLES = {
     "remember": """1. How many learning objectives did the researchers collect?
@@ -81,7 +83,8 @@ def build_bloom_question_examples(bloom_levels: list[str]) -> str:
     )
 
 
-EXAM_SYSTEM_PROMPT = (
+EXAM_SYSTEM_PROMPT = render_template(load_template("vle.exams.prompt_templates", "generate_exam_system.md"), allowed=set(), values={}).strip()
+"""(
     "You are an exam writer for a study assistant. You will be given source "
     "excerpts from one selected chapter or document. Write multiple-choice "
     "questions that test understanding of that source - every question must be "
@@ -127,7 +130,7 @@ EXAM_SYSTEM_PROMPT = (
     '- "options": exactly three answer choices, as an array of strings\n'
     '- "correct_index": the 0-based index of the correct option in "options"\n'
     '- "why": one sentence explaining why that answer is correct'
-)
+)"""
 
 
 def build_exam_messages(

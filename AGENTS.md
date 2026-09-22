@@ -12,7 +12,7 @@ Use `uv` for Python dependencies and commands:
 uv sync                                      # install project and test dependencies
 uv run pytest -q                             # run the complete test suite
 uv run pytest src/chunker_test.py -k merge -q # run focused tests
-uv run uvicorn vle.api.server:app --app-dir src --reload # serve the API on :8000
+uv run uvicorn vle.api.app:app --app-dir src --reload # serve the API on :8000
 uv run python main.py "What is BM25?" --no-answer # rebuild/search without an LLM call
 docker compose up --watch                     # run API (:8000) and UI (:3000), then watch local source changes
 cd frontend && npm run lint                   # check Prettier formatting and ESLint rules

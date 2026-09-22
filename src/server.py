@@ -1,3 +1,5 @@
 """Backward-compatible ASGI entrypoint for existing Uvicorn commands."""
 
-from vle.api.server import *  # noqa: F403
+from vle.api.app import app
+
+__all__ = ["app"]
