@@ -27,9 +27,9 @@ def parse_exam_json(raw: str) -> list[dict]:
         missing = REQUIRED_FIELDS - question.keys()
         if missing:
             raise ValueError(f"Question missing fields: {sorted(missing)}")
-        if not isinstance(question["options"], list) or len(question["options"]) != 4:
-            raise ValueError("Each question must have exactly 4 options")
-        if not isinstance(question["correct_index"], int) or not (0 <= question["correct_index"] < 4):
-            raise ValueError("correct_index must be an integer between 0 and 3")
+        if not isinstance(question["options"], list) or len(question["options"]) != 3:
+            raise ValueError("Each question must have exactly 3 options")
+        if not isinstance(question["correct_index"], int) or not (0 <= question["correct_index"] < 3):
+            raise ValueError("correct_index must be an integer between 0 and 2")
 
     return data

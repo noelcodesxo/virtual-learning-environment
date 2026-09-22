@@ -462,6 +462,36 @@ button:disabled {
   border: 1px solid #aaa;
   background: #fff;
 }
+.bloom-levels {
+  margin: 18px 0;
+  padding: 0;
+  border: 0;
+}
+.bloom-levels legend {
+  margin-bottom: 4px;
+}
+.bloom-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+.bloom-option {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 9px;
+  border: 1px solid #ccc;
+  background: #fff;
+  cursor: pointer;
+}
+.bloom-option input {
+  margin-top: 3px;
+}
+.bloom-option small {
+  display: block;
+  margin-top: 2px;
+  color: #666;
+}
 .generate-btn {
   width: 100%;
   margin-top: 10px;
@@ -477,6 +507,10 @@ button:disabled {
 .exam-request {
   color: #666;
   font-size: 13px;
+}
+.history-bloom {
+  color: #666;
+  font-size: 12px;
 }
 .exam-progress-row {
   display: flex;

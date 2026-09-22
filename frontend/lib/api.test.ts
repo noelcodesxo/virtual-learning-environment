@@ -23,6 +23,27 @@ describe("api client", () => {
     await expect(api.models()).rejects.toThrow("Unavailable");
   });
 
+  it("creates and checks exam generation jobs through the API rewrite", async () => {
+    const job = {
+      id: "job-1",
+      status: "queued",
+      exam_id: null,
+      error: null,
+      created_at: "2026-09-21T00:00:00Z",
+      updated_at: "2026-09-21T00:00:00Z",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(job), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...job, status: "running" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.createExamJob({ source: "Book", chapter: "Chapter" })).resolves.toEqual(job);
+    await expect(api.examJob("job-1")).resolves.toMatchObject({ id: "job-1", status: "running" });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/exam-jobs", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/exam-jobs/job-1", undefined);
+  });
+
   it("uploads document files through the API rewrite", async () => {
     const fetchMock = vi
       .fn()

@@ -90,7 +90,9 @@ Use **Chat** when you want to explore your library or get help understanding a t
 
 Use **Exams** when you want to test your understanding of a specific source chapter. Choose a source and chapter, or describe the topic you want to be tested on. The exam builder reads the full selected chapter and generates a multiple-choice exam; after you submit it, it scores your answers and explains the correct choices.
 
-Exam generation is optional and disabled by default. The current implementation uses an OpenRouter-compatible model for selecting a chapter from a description and generating the exam, so enabling it requires `EXAM_BUILDER_ENABLED=true` and an `OPENROUTER_API_KEY`. You can choose the exam model with `EXAM_MODEL`; its default is `anthropic/claude-3.5-sonnet`. Chat remains local and uses Ollama.
+Exam generation is optional and disabled by default. It uses OpenRouter-compatible models to select a chapter from a description and to generate the final exam, so enabling it requires `EXAM_BUILDER_ENABLED=true` and an `OPENROUTER_API_KEY`. The compact source-grounded topic map uses the same local Ollama model as chat by default (`LLM_MODEL` and `OLLAMA_BASE_URL`); override it with `EXAM_TOPIC_MAP_MODEL` or set `EXAM_TOPIC_MAP_PROVIDER=openrouter` when needed. Model requests time out after five minutes by default; set `LLM_REQUEST_TIMEOUT_SECONDS` to adjust that limit.
+
+Before generating an exam, choose one or more Bloom's taxonomy levels: remember, understand, apply, analyze, evaluate, or create. The topic-map model identifies the chapter's central, grounded topics with short source excerpts; the question-writing model receives that map, the selected levels, and the original source excerpts.
 
 Generated exams, answers, and scores are saved locally as individual JSON files in `data/exams/`, so they remain available after restarting or rebuilding the application. The directory is excluded from Git; back it up if you want to keep your exam history. Set `EXAMS_DIR` to store it elsewhere. Docker Compose mounts `./data` into the backend container so this history also survives container rebuilds.
 

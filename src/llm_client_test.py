@@ -21,9 +21,10 @@ class _FakeResponse:
 def test_ollama_client_posts_messages_and_returns_reply(monkeypatch):
     captured = {}
 
-    def fake_urlopen(request):
+    def fake_urlopen(request, timeout):
         captured["url"] = request.full_url
         captured["body"] = json.loads(request.data)
+        captured["timeout"] = timeout
         return _FakeResponse({"message": {"content": "hello"}})
 
     monkeypatch.setattr(llm_client.urllib.request, "urlopen", fake_urlopen)
@@ -38,12 +39,13 @@ def test_ollama_client_posts_messages_and_returns_reply(monkeypatch):
         "messages": [{"role": "user", "content": "hi"}],
         "stream": False,
     }
+    assert captured["timeout"] == llm_client.MODEL_REQUEST_TIMEOUT_SECONDS
 
 
 def test_ollama_client_uses_custom_base_url(monkeypatch):
     captured = {}
 
-    def fake_urlopen(request):
+    def fake_urlopen(request, timeout):
         captured["url"] = request.full_url
         return _FakeResponse({"message": {"content": "hello"}})
 
@@ -55,10 +57,25 @@ def test_ollama_client_uses_custom_base_url(monkeypatch):
     assert captured["url"] == "http://remote:11434/api/chat"
 
 
+def test_ollama_client_sends_a_json_schema_when_requested(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["body"] = json.loads(request.data)
+        return _FakeResponse({"message": {"content": "{}"}})
+
+    monkeypatch.setattr(llm_client.urllib.request, "urlopen", fake_urlopen)
+    schema = {"type": "object", "required": ["topics"]}
+
+    OllamaClient(model="llama3").chat([{"role": "user", "content": "hi"}], response_format=schema)
+
+    assert captured["body"]["format"] == schema
+
+
 def test_openrouter_client_sends_bearer_token_and_parses_choice(monkeypatch):
     captured = {}
 
-    def fake_urlopen(request):
+    def fake_urlopen(request, timeout):
         captured["headers"] = request.headers
         captured["url"] = request.full_url
         return _FakeResponse({"choices": [{"message": {"content": "hi there"}}]})
