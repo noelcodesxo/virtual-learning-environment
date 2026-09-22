@@ -55,7 +55,7 @@ Docker Desktop and Docker Compose are recommended to run the backend and fronten
    set -a
    source .local.env
    set +a
-   uv run uvicorn server:app --app-dir src --reload
+   uv run uvicorn vle.api.app:app --app-dir src --reload
    ```
 
 6. In a second terminal, start the web interface:
