@@ -7,6 +7,8 @@ export type Source = {
 
 export type ChatResponse = { answer: string; sources: Source[] };
 
+export type BloomLevel = "remember" | "understand" | "apply" | "analyze" | "evaluate" | "create";
+
 export type Book = { title: string; chapters: string[] };
 
 export type LibraryDocument = {
@@ -25,7 +27,17 @@ export type Exam = {
   generated_from: "form" | "description";
   description?: string | null;
   requested_question_count?: number;
+  bloom_levels: BloomLevel[];
   questions: ExamQuestion[];
+};
+
+export type ExamJob = {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  exam_id: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type ExamSummary = Omit<Exam, "questions"> & {

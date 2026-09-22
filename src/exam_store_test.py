@@ -11,7 +11,7 @@ def _exam(**overrides):
         "questions": [{
             "section": "Evaluation Criteria",
             "question": "What is X?",
-            "options": ["A", "B", "C", "D"],
+            "options": ["A", "B", "C"],
             "correct_index": 1,
             "why": "Because B is right.",
         }],

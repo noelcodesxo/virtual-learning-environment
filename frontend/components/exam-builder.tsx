@@ -3,10 +3,21 @@
 import Link from "next/link";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { Book, Exam, ExamSummary, GradedExam } from "../lib/types";
+import type { BloomLevel, Book, Exam, ExamJob, ExamSummary, GradedExam } from "../lib/types";
 
 type Stage = "loading" | "unavailable" | "configure" | "history" | "generating" | "exam" | "results";
 const errorText = (error: unknown) => (error instanceof Error ? error.message : "Could not reach the server.");
+const bloomOptions: { value: BloomLevel; label: string; description: string }[] = [
+  { value: "remember", label: "Remember", description: "Recall facts and terms" },
+  { value: "understand", label: "Understand", description: "Explain ideas and relationships" },
+  { value: "apply", label: "Apply", description: "Use methods in a situation" },
+  { value: "analyze", label: "Analyze", description: "Distinguish structure and relationships" },
+  { value: "evaluate", label: "Evaluate", description: "Judge using source-based criteria" },
+  { value: "create", label: "Create", description: "Plan a supported approach" },
+];
+const allBloomLevels = bloomOptions.map((option) => option.value);
+const formatBloomLevels = (levels: BloomLevel[]) =>
+  levels.map((level) => level[0].toUpperCase() + level.slice(1)).join(", ");
 
 export function ExamBuilder({ initialView }: { initialView: "configure" | "history" }) {
   const [stage, setStage] = useState<Stage>("loading");
@@ -16,9 +27,11 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
   const [description, setDescription] = useState("");
   const [feedback, setFeedback] = useState("");
   const [questionCount, setQuestionCount] = useState(10);
+  const [bloomLevels, setBloomLevels] = useState<BloomLevel[]>(allBloomLevels);
   const [generationMethod, setGenerationMethod] = useState<"form" | "description">("form");
   const [exam, setExam] = useState<Exam | null>(null);
   const [graded, setGraded] = useState<GradedExam | null>(null);
+  const [examJob, setExamJob] = useState<ExamJob | null>(null);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [current, setCurrent] = useState(0);
   const [error, setError] = useState("");
@@ -38,10 +51,16 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
       .features()
       .then(({ exam_builder }) => {
         if (!exam_builder) return setStage("unavailable");
-        return Promise.all([api.books(), api.exams()]).then(([bookData, examData]) => {
+        return Promise.all([api.books(), api.exams(), api.examJobs()]).then(([bookData, examData, jobData]) => {
           setBooks(bookData.books);
           setRecent(examData.exams);
-          setStage(initialView);
+          const activeJob = jobData.jobs.find((job) => job.status === "queued" || job.status === "running");
+          if (activeJob) {
+            setExamJob(activeJob);
+            setStage("generating");
+          } else {
+            setStage(initialView);
+          }
         });
       })
       .catch(() => setStage("unavailable"));
@@ -54,9 +73,11 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
     setDescription("");
     setFeedback("");
     setQuestionCount(10);
+    setBloomLevels(allBloomLevels);
     setGenerationMethod("form");
     setExam(null);
     setGraded(null);
+    setExamJob(null);
     setAnswers({});
     setCurrent(0);
     setError("");
@@ -90,27 +111,66 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
       resolveDescription();
     }
   }
+  function toggleBloomLevel(level: BloomLevel) {
+    setBloomLevels((levels) =>
+      levels.includes(level) ? levels.filter((selected) => selected !== level) : [...levels, level],
+    );
+  }
   async function generate() {
-    if (!examSource || !chapter) return;
+    if (!examSource || !chapter || !bloomLevels.length) return;
     setStage("generating");
     setError("");
     try {
-      const next = await api.generateExam({
+      const nextJob = await api.createExamJob({
         source: examSource,
         chapter,
         num_questions: questionCount,
         generated_from: generationMethod,
         description: generationMethod === "description" ? description.trim() : null,
+        bloom_levels: bloomLevels,
       });
-      setExam(next);
-      setAnswers({});
-      setCurrent(0);
-      setStage("exam");
+      setExamJob(nextJob);
     } catch (err) {
       setError(errorText(err));
       setStage("configure");
     }
   }
+  const examJobId = examJob?.id;
+  useEffect(() => {
+    if (stage !== "generating" || !examJobId) return;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const nextJob = await api.examJob(examJobId);
+        if (cancelled) return;
+        setExamJob(nextJob);
+        if (nextJob.status === "completed" && nextJob.exam_id) {
+          const nextExam = await api.exam(nextJob.exam_id);
+          if (cancelled) return;
+          setExam(nextExam as Exam);
+          setAnswers({});
+          setCurrent(0);
+          setStage("exam");
+          loadRecent();
+        } else if (nextJob.status === "failed") {
+          setError(nextJob.error ?? "Exam generation failed.");
+          setStage("configure");
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setError(errorText(err));
+        setStage("configure");
+      }
+    };
+
+    poll();
+    const interval = window.setInterval(poll, 2_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [examJobId, loadRecent, stage]);
   const grade = useCallback(async () => {
     if (!exam) return;
     setError("");
@@ -202,6 +262,7 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
     (request.generated_from === "description" && request.description
       ? `Your request: ${request.description}`
       : `Form request: ${request.source} · ${request.chapter} · ${request.requested_question_count ?? graded?.total ?? exam?.questions.length} questions.`);
+  const bloomSummary = request && `Bloom levels: ${formatBloomLevels(request.bloom_levels)}`;
   const question = exam?.questions[current];
 
   return (
@@ -309,24 +370,58 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
                 </button>
               </div>
             </div>
+            <fieldset className="field bloom-levels">
+              <legend>Bloom&apos;s taxonomy levels</legend>
+              <p className="field-help" id="bloom-levels-help">
+                Select one or more levels to shape the kind of questions in this exam.
+              </p>
+              <div className="bloom-options" aria-describedby="bloom-levels-help">
+                {bloomOptions.map((option) => (
+                  <label className="bloom-option" key={option.value}>
+                    <input
+                      type="checkbox"
+                      checked={bloomLevels.includes(option.value)}
+                      onChange={() => toggleBloomLevel(option.value)}
+                    />
+                    <span>
+                      <b>{option.label}</b>
+                      <small>{option.description}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             {error && (
               <p className="exam-error" role="alert">
                 {error}
               </p>
             )}
-            <button className="generate-btn" disabled={!examSource || !chapter} type="button" onClick={generate}>
-              {examSource && chapter ? "Generate exam" : "Select a source and chapter"}
+            <button
+              className="generate-btn"
+              disabled={!examSource || !chapter || !bloomLevels.length}
+              type="button"
+              onClick={generate}
+            >
+              {examSource && chapter
+                ? bloomLevels.length
+                  ? "Generate exam"
+                  : "Select a Bloom level"
+                : "Select a source and chapter"}
             </button>
           </div>
         )}
         {stage === "history" && <ExamHistory recent={recent} onOpen={openExam} />}
         {stage === "generating" && (
           <div className="page-message" role="status">
-            <p>
-              Source selected: {examSource} · {chapter}
+            {examSource && chapter && (
+              <p>
+                Source selected: {examSource} · {chapter}
+              </p>
+            )}
+            <h1>{examJob?.status === "queued" ? "Exam generation is queued…" : "Generating your exam…"}</h1>
+            <p className="generation-note">
+              This can take a little while for longer documents. You can safely refresh this page while it runs.
             </p>
-            <h1>Waiting for the exam model response…</h1>
-            <p className="generation-note">This can take a little while for longer documents.</p>
             <div className="typing" aria-hidden="true">
               <span />
               <span />
@@ -337,6 +432,7 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
         {stage === "exam" && exam && question && (
           <div className="exam-inner">
             <p className="exam-request">{requestSummary}</p>
+            <p className="exam-request">{bloomSummary}</p>
             <div className="exam-progress-row" aria-live="polite">
               <span>
                 Question {current + 1} of {exam.questions.length}
@@ -427,6 +523,7 @@ export function ExamBuilder({ initialView }: { initialView: "configure" | "histo
               </div>
             </div>
             <p className="exam-request">{requestSummary}</p>
+            <p className="exam-request">{bloomSummary}</p>
             <h1>Review</h1>
             {graded.review.map((item, index) => (
               <article
@@ -510,6 +607,7 @@ function ExamHistory({ recent, onOpen }: { recent: ExamSummary[]; onOpen: (id: s
                 <p>
                   {item.chapter} · {item.requested_question_count} questions
                 </p>
+                <p className="history-bloom">Bloom: {formatBloomLevels(item.bloom_levels)}</p>
                 {item.score !== null ? (
                   <p className="history-score">
                     Score: {item.score}/{item.total}

@@ -1,4 +1,4 @@
-import type { Book, ChatResponse, Exam, ExamSummary, GradedExam, LibraryDocument } from "./types";
+import type { Book, ChatResponse, Exam, ExamJob, ExamSummary, GradedExam, LibraryDocument } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, init);
@@ -36,12 +36,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ description }),
     }),
-  generateExam: (body: object) =>
-    request<Exam>("/exams", {
+  createExamJob: (body: object) =>
+    request<ExamJob>("/exam-jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+  examJobs: () => request<{ jobs: ExamJob[] }>("/exam-jobs"),
+  examJob: (id: string) => request<ExamJob>(`/exam-jobs/${id}`),
   exams: () => request<{ exams: ExamSummary[] }>("/exams"),
   exam: (id: string) => request<Exam | GradedExam>(`/exams/${id}`),
   gradeExam: (id: string, answers: Record<number, number>) =>

@@ -1,9 +1,10 @@
 import json
+import logging
 import urllib.error
 from asyncio import run
 
 import pytest
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 
 import server
 from exam_store import ExamStore, ExamStoreError
@@ -38,7 +39,7 @@ class _FakeClient:
     def __init__(self, answer):
         self._answer = answer
 
-    def chat(self, messages):
+    def chat(self, messages, response_format=None):
         return self._answer
 
 
@@ -84,6 +85,17 @@ class _FakeExamStore:
         if self.error:
             raise self.error
         self.saved.append(exam)
+
+
+class _FakeExamJobStore:
+    def __init__(self, error=None):
+        self.error = error
+        self.saved = []
+
+    def save(self, job):
+        if self.error:
+            raise self.error
+        self.saved.append(job)
 
 
 def test_list_models_returns_sorted_model_names(monkeypatch):
@@ -265,12 +277,32 @@ def _exam_question(**overrides):
     base = {
         "section": "Evaluation Criteria",
         "question": "What is X?",
-        "options": ["A", "B", "C", "D"],
+        "options": ["A", "B", "C"],
         "correct_index": 1,
         "why": "Because B is right.",
     }
     base.update(overrides)
     return base
+
+
+TOPIC_MAP = {
+    "topics": [
+        {"topic": "Core concept", "summary": "A chapter concept.", "source_excerpt": "text"}
+    ]
+}
+
+
+def _mock_exam_clients(monkeypatch, exam_raw=None):
+    calls = []
+
+    def fake_build_client(provider, model):
+        calls.append((provider, model))
+        if len(calls) == 1:
+            return _FakeClient(json.dumps(TOPIC_MAP))
+        return _FakeClient(exam_raw if exam_raw is not None else json.dumps([_exam_question()]))
+
+    monkeypatch.setattr(server, "build_client", fake_build_client)
+    return calls
 
 
 def test_exam_endpoints_return_404_when_feature_disabled(monkeypatch):
@@ -323,7 +355,7 @@ def test_generate_exam_stores_answers_but_does_not_return_them(monkeypatch):
     monkeypatch.setitem(server.state, "exams", {})
     exam_store = _FakeExamStore()
     monkeypatch.setitem(server.state, "exam_store", exam_store)
-    monkeypatch.setattr(server, "build_client", lambda provider, model: _FakeClient(json.dumps([_exam_question()])))
+    calls = _mock_exam_clients(monkeypatch)
 
     response = server.generate_exam(
         server.GenerateExamRequest(source="AI Engineering", chapter="4. Evaluate AI Systems", num_questions=1)
@@ -331,12 +363,72 @@ def test_generate_exam_stores_answers_but_does_not_return_them(monkeypatch):
 
     assert response.source == "AI Engineering"
     assert response.questions == [
-        server.ExamQuestion(section="Evaluation Criteria", question="What is X?", options=["A", "B", "C", "D"])
+        server.ExamQuestion(section="Evaluation Criteria", question="What is X?", options=["A", "B", "C"])
     ]
     stored = server.state["exams"][response.id]
     assert stored["questions"][0]["correct_index"] == 1
     assert stored["score"] is None
+    assert stored["bloom_levels"] == list(server.BLOOM_LEVELS)
+    assert stored["topic_map"] == TOPIC_MAP
+    assert calls == [(server.EXAM_TOPIC_MAP_PROVIDER, server.EXAM_TOPIC_MAP_MODEL), ("openrouter", server.EXAM_MODEL)]
     assert exam_store.saved == [stored]
+
+
+def test_exam_job_returns_immediately_then_persists_a_completed_exam(monkeypatch):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
+    monkeypatch.setitem(server.state, "chapter_loader", _FakeChapterLoader(
+        chapter_text_by_key={("AI Engineering", "4. Evaluate AI Systems"): "chapter text"}
+    ))
+    monkeypatch.setitem(server.state, "exams", {})
+    monkeypatch.setitem(server.state, "exam_store", _FakeExamStore())
+    job_store = _FakeExamJobStore()
+    monkeypatch.setitem(server.state, "exam_job_store", job_store)
+    monkeypatch.setitem(server.state, "exam_jobs", {})
+    _mock_exam_clients(monkeypatch)
+    background_tasks = BackgroundTasks()
+
+    response = server.create_exam_job(
+        server.GenerateExamRequest(source="AI Engineering", chapter="4. Evaluate AI Systems", num_questions=1),
+        background_tasks,
+    )
+
+    assert response.status == "queued"
+    assert response.exam_id is None
+    assert len(background_tasks.tasks) == 1
+    assert server.get_exam_job(response.id).status == "queued"
+
+    run(background_tasks())
+
+    completed = server.get_exam_job(response.id)
+    assert completed.status == "completed"
+    assert completed.exam_id in server.state["exams"]
+    assert job_store.saved[-1]["status"] == "completed"
+
+
+def test_exam_job_records_a_model_failure_without_losing_the_job(monkeypatch):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
+    monkeypatch.setitem(server.state, "chapter_loader", _FakeChapterLoader(
+        chapter_text_by_key={("Book", "Chapter"): "chapter text"}
+    ))
+    monkeypatch.setitem(server.state, "exams", {})
+    monkeypatch.setitem(server.state, "exam_store", _FakeExamStore())
+    monkeypatch.setitem(server.state, "exam_job_store", _FakeExamJobStore())
+    monkeypatch.setitem(server.state, "exam_jobs", {})
+
+    class FailingClient:
+        def chat(self, messages, response_format=None):
+            raise urllib.error.URLError("connection reset")
+
+    monkeypatch.setattr(server, "build_client", lambda provider, model: FailingClient())
+    background_tasks = BackgroundTasks()
+    response = server.create_exam_job(server.GenerateExamRequest(source="Book", chapter="Chapter"), background_tasks)
+
+    run(background_tasks())
+
+    failed = server.get_exam_job(response.id)
+    assert failed.status == "failed"
+    assert failed.exam_id is None
+    assert failed.error == "Topic map request failed: <urlopen error connection reset>"
 
 
 def test_generate_exam_preserves_a_description_request(monkeypatch):
@@ -346,7 +438,7 @@ def test_generate_exam_preserves_a_description_request(monkeypatch):
     ))
     monkeypatch.setitem(server.state, "exams", {})
     monkeypatch.setitem(server.state, "exam_store", _FakeExamStore())
-    monkeypatch.setattr(server, "build_client", lambda provider, model: _FakeClient(json.dumps([_exam_question()])))
+    _mock_exam_clients(monkeypatch)
 
     response = server.generate_exam(server.GenerateExamRequest(
         source="AI Engineering",
@@ -371,7 +463,7 @@ def test_generate_exam_returns_500_without_retaining_an_unsaved_exam(monkeypatch
     exams = {}
     monkeypatch.setitem(server.state, "exams", exams)
     monkeypatch.setitem(server.state, "exam_store", _FakeExamStore(ExamStoreError("disk full")))
-    monkeypatch.setattr(server, "build_client", lambda provider, model: _FakeClient(json.dumps([_exam_question()])))
+    _mock_exam_clients(monkeypatch)
 
     with pytest.raises(HTTPException) as exc_info:
         server.generate_exam(server.GenerateExamRequest(source="Book", chapter="Chapter"))
@@ -410,12 +502,207 @@ def test_generate_exam_raises_502_when_model_output_cannot_be_parsed(monkeypatch
     monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
     loader = _FakeChapterLoader(chapter_text_by_key={("Book", "Chapter"): "text"})
     monkeypatch.setitem(server.state, "chapter_loader", loader)
+    _mock_exam_clients(monkeypatch, exam_raw="not json")
+
+    with pytest.raises(HTTPException) as exc_info:
+        server.generate_exam(server.GenerateExamRequest(source="Book", chapter="Chapter"))
+
+    assert exc_info.value.status_code == 502
+
+
+def test_generate_exam_logs_unavailable_topic_map_model_and_returns_503(monkeypatch, caplog):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
+    monkeypatch.setattr(server, "EXAM_TOPIC_MAP_PROVIDER", "openrouter")
+    monkeypatch.setattr(server, "EXAM_TOPIC_MAP_MODEL", "missing/model")
+    monkeypatch.setitem(server.state, "chapter_loader", _FakeChapterLoader(
+        chapter_text_by_key={("Book", "Chapter"): "text"}
+    ))
+
+    class MissingModelClient:
+        def chat(self, messages, response_format=None):
+            raise urllib.error.HTTPError("https://openrouter.ai/api/v1/chat/completions", 404, "Not Found", None, None)
+
+    calls = []
+
+    def fake_build_client(provider, model):
+        calls.append((provider, model))
+        return MissingModelClient()
+
+    monkeypatch.setattr(server, "build_client", fake_build_client)
+
+    with pytest.raises(HTTPException) as exc_info:
+        server.generate_exam(server.GenerateExamRequest(source="Book", chapter="Chapter"))
+
+    assert exc_info.value.status_code == 503
+    assert "Topic-map model is unavailable" in exc_info.value.detail
+    assert "Configured topic-map model 'missing/model' is not available on OpenRouter" in caplog.text
+    assert calls == [("openrouter", "missing/model")]
+
+
+def test_generate_exam_uses_the_local_chat_model_for_topic_mapping_by_default(monkeypatch):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
+    monkeypatch.setattr(server, "EXAM_TOPIC_MAP_PROVIDER", "ollama")
+    monkeypatch.setattr(server, "EXAM_TOPIC_MAP_MODEL", server.DEFAULT_MODEL)
+    monkeypatch.setitem(server.state, "chapter_loader", _FakeChapterLoader(
+        chapter_text_by_key={("Book", "Chapter"): "chapter text"}
+    ))
+    monkeypatch.setitem(server.state, "exams", {})
+    monkeypatch.setitem(server.state, "exam_store", _FakeExamStore())
+    calls = _mock_exam_clients(monkeypatch)
+
+    server.generate_exam(server.GenerateExamRequest(source="Book", chapter="Chapter", num_questions=1))
+
+    assert calls == [("ollama", server.DEFAULT_MODEL), ("openrouter", server.EXAM_MODEL)]
+
+
+def test_generate_exam_requests_the_topic_map_json_schema_from_ollama(monkeypatch):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
+    monkeypatch.setattr(server, "EXAM_TOPIC_MAP_PROVIDER", "ollama")
+    monkeypatch.setitem(server.state, "chapter_loader", _FakeChapterLoader(
+        chapter_text_by_key={("Book", "Chapter"): "chapter text"}
+    ))
+    monkeypatch.setitem(server.state, "exams", {})
+    monkeypatch.setitem(server.state, "exam_store", _FakeExamStore())
+    response_formats = []
+
+    class SchemaCapturingClient:
+        def __init__(self, response):
+            self.response = response
+
+        def chat(self, messages, response_format=None):
+            response_formats.append(response_format)
+            return self.response
+
+    def fake_build_client(provider, model):
+        if not response_formats:
+            return SchemaCapturingClient(json.dumps(TOPIC_MAP))
+        return SchemaCapturingClient(json.dumps([_exam_question()]))
+
+    monkeypatch.setattr(server, "build_client", fake_build_client)
+
+    server.generate_exam(server.GenerateExamRequest(source="Book", chapter="Chapter", num_questions=1))
+
+    assert response_formats == [server.TOPIC_MAP_JSON_SCHEMA, None]
+
+
+def test_generate_exam_logs_topic_map_and_question_generation_durations(monkeypatch, caplog):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
+    monkeypatch.setitem(server.state, "chapter_loader", _FakeChapterLoader(
+        chapter_text_by_key={("Book", "Chapter"): "chapter text"}
+    ))
+    monkeypatch.setitem(server.state, "exams", {})
+    monkeypatch.setitem(server.state, "exam_store", _FakeExamStore())
+    _mock_exam_clients(monkeypatch)
+    clock = iter([10.0, 11.25, 20.0, 23.5])
+    monkeypatch.setattr(server.time, "perf_counter", lambda: next(clock))
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+
+    server.generate_exam(server.GenerateExamRequest(source="Book", chapter="Chapter", num_questions=1))
+
+    assert "Starting exam topic-map generation attempt 1/3" in caplog.text
+    assert "Exam topic-map generation attempt 1/3 took 1.25 seconds" in caplog.text
+    assert "Starting exam question generation" in caplog.text
+    assert "Exam question generation attempt took 3.50 seconds" in caplog.text
+
+
+def test_generate_exam_passes_selected_bloom_levels_and_topic_map_to_exam_model(monkeypatch):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
+    monkeypatch.setitem(server.state, "chapter_loader", _FakeChapterLoader(
+        chapter_text_by_key={("Book", "Chapter"): "chapter text"}
+    ))
+    monkeypatch.setitem(server.state, "exams", {})
+    monkeypatch.setitem(server.state, "exam_store", _FakeExamStore())
+    messages = []
+
+    class CapturingClient(_FakeClient):
+        def chat(self, request_messages, response_format=None):
+            messages.append(request_messages)
+            return super().chat(request_messages, response_format=response_format)
+
+    def fake_build_client(provider, model):
+        if not messages:
+            return CapturingClient(json.dumps(TOPIC_MAP))
+        return CapturingClient(json.dumps([_exam_question()]))
+
+    monkeypatch.setattr(server, "build_client", fake_build_client)
+
+    response = server.generate_exam(server.GenerateExamRequest(
+        source="Book", chapter="Chapter", num_questions=1, bloom_levels=["apply", "evaluate"]
+    ))
+
+    assert response.bloom_levels == ["apply", "evaluate"]
+    assert "apply, evaluate" in messages[1][1]["content"]
+    assert json.dumps(TOPIC_MAP) in messages[1][1]["content"]
+
+
+def test_generate_exam_rejects_an_invalid_topic_map(monkeypatch):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
+    monkeypatch.setitem(server.state, "chapter_loader", _FakeChapterLoader(
+        chapter_text_by_key={("Book", "Chapter"): "chapter text"}
+    ))
     monkeypatch.setattr(server, "build_client", lambda provider, model: _FakeClient("not json"))
 
     with pytest.raises(HTTPException) as exc_info:
         server.generate_exam(server.GenerateExamRequest(source="Book", chapter="Chapter"))
 
     assert exc_info.value.status_code == 502
+    assert "topic map" in exc_info.value.detail
+
+
+def test_generate_exam_retries_invalid_topic_maps_and_recovers_on_the_third_attempt(monkeypatch, caplog):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
+    monkeypatch.setitem(server.state, "chapter_loader", _FakeChapterLoader(
+        chapter_text_by_key={("Book", "Chapter"): "chapter text"}
+    ))
+    monkeypatch.setitem(server.state, "exams", {})
+    monkeypatch.setitem(server.state, "exam_store", _FakeExamStore())
+    topic_map_responses = iter(["not json", "still not json", json.dumps(TOPIC_MAP)])
+    topic_map_calls = []
+
+    class TopicMapClient:
+        def chat(self, messages, response_format=None):
+            topic_map_calls.append((messages, response_format))
+            return next(topic_map_responses)
+
+    def fake_build_client(provider, model):
+        if provider == server.EXAM_TOPIC_MAP_PROVIDER and model == server.EXAM_TOPIC_MAP_MODEL:
+            return TopicMapClient()
+        return _FakeClient(json.dumps([_exam_question()]))
+
+    monkeypatch.setattr(server, "build_client", fake_build_client)
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+
+    response = server.generate_exam(server.GenerateExamRequest(source="Book", chapter="Chapter", num_questions=1))
+
+    assert response.questions[0].question == "What is X?"
+    assert len(topic_map_calls) == 3
+    assert "attempt 1/3 failed; retrying" in caplog.text
+    assert "attempt 2/3 failed; retrying" in caplog.text
+    assert "failed after 3 attempts" not in caplog.text
+
+
+def test_generate_exam_returns_an_error_after_three_failed_topic_map_attempts(monkeypatch, caplog):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
+    monkeypatch.setitem(server.state, "chapter_loader", _FakeChapterLoader(
+        chapter_text_by_key={("Book", "Chapter"): "chapter text"}
+    ))
+    topic_map_calls = []
+
+    class InvalidTopicMapClient:
+        def chat(self, messages, response_format=None):
+            topic_map_calls.append((messages, response_format))
+            return "not json"
+
+    monkeypatch.setattr(server, "build_client", lambda provider, model: InvalidTopicMapClient())
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+
+    with pytest.raises(HTTPException) as exc_info:
+        server.generate_exam(server.GenerateExamRequest(source="Book", chapter="Chapter"))
+
+    assert exc_info.value.status_code == 502
+    assert "Could not parse topic map" in exc_info.value.detail
+    assert len(topic_map_calls) == 3
+    assert "Exam topic-map generation failed after 3 attempts" in caplog.text
 
 
 def test_grade_exam_scores_answers_and_returns_full_review(monkeypatch):
@@ -438,6 +725,7 @@ def test_grade_exam_scores_answers_and_returns_full_review(monkeypatch):
     response = server.grade_exam("exam-1", server.GradeExamRequest(answers={"0": 0, "1": 0}))
 
     assert response.score == 1
+    assert response.bloom_levels == list(server.BLOOM_LEVELS)
     assert response.total == 2
     assert response.review[0].given_index == 0
     assert response.review[1].given_index == 0
@@ -498,7 +786,7 @@ def test_get_exam_hides_answers_until_graded(monkeypatch):
 
     assert response.graded is False
     assert response.questions == [
-        server.ExamQuestion(section="Evaluation Criteria", question="What is X?", options=["A", "B", "C", "D"])
+        server.ExamQuestion(section="Evaluation Criteria", question="What is X?", options=["A", "B", "C"])
     ]
     assert response.review is None
 

@@ -4,9 +4,12 @@ import urllib.request
 from abc import ABC, abstractmethod
 
 
+MODEL_REQUEST_TIMEOUT_SECONDS = float(os.environ.get("LLM_REQUEST_TIMEOUT_SECONDS", "300"))
+
+
 class LLMClient(ABC):
     @abstractmethod
-    def chat(self, messages: list[dict[str, str]]) -> str:
+    def chat(self, messages: list[dict[str, str]], response_format: dict | str | None = None) -> str:
         pass
 
 
@@ -17,7 +20,7 @@ def _post_json(url: str, payload: dict, headers: dict[str, str]) -> dict:
         headers={"Content-Type": "application/json", **headers},
         method="POST",
     )
-    with urllib.request.urlopen(request) as response:
+    with urllib.request.urlopen(request, timeout=MODEL_REQUEST_TIMEOUT_SECONDS) as response:
         return json.load(response)
 
 
@@ -26,8 +29,10 @@ class OllamaClient(LLMClient):
         self.model = model
         self.base_url = base_url.rstrip("/")
 
-    def chat(self, messages: list[dict[str, str]]) -> str:
+    def chat(self, messages: list[dict[str, str]], response_format: dict | str | None = None) -> str:
         payload = {"model": self.model, "messages": messages, "stream": False}
+        if response_format is not None:
+            payload["format"] = response_format
         data = _post_json(f"{self.base_url}/api/chat", payload, headers={})
         return data["message"]["content"]
 
@@ -39,8 +44,10 @@ class OpenAICompatibleClient(LLMClient):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
 
-    def chat(self, messages: list[dict[str, str]]) -> str:
+    def chat(self, messages: list[dict[str, str]], response_format: dict | str | None = None) -> str:
         payload = {"model": self.model, "messages": messages}
+        if response_format is not None:
+            payload["response_format"] = response_format
         headers = {"Authorization": f"Bearer {self.api_key}"}
         data = _post_json(f"{self.base_url}/chat/completions", payload, headers)
         return data["choices"][0]["message"]["content"]

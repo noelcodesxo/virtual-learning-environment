@@ -9,7 +9,7 @@ def _question(**overrides):
     base = {
         "section": "Evaluation Criteria",
         "question": "What is X?",
-        "options": ["A", "B", "C", "D"],
+        "options": ["A", "B", "C"],
         "correct_index": 1,
         "why": "Because B is right.",
     }
@@ -48,7 +48,7 @@ def test_raises_when_missing_required_field():
         parse_exam_json(json.dumps([question]))
 
 
-def test_raises_when_options_count_is_not_four():
+def test_raises_when_options_count_is_not_three():
     with pytest.raises(ValueError):
         parse_exam_json(json.dumps([_question(options=["A", "B"])]))
 
