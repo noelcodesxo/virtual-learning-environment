@@ -1,19 +1,16 @@
 import argparse
 import os
-import sys
 from pathlib import Path
 
 from ebooklib import epub
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-from chunker import Chunker
-from index_loader import load_index
-from indexer import Indexer
-from llm_client import build_client
-from preprocessor import PreProcessor
-from prompts import build_rag_messages
-from retriever import Retriever
+from vle.llm.clients import build_client
+from vle.rag.chunking import Chunker
+from vle.rag.index_loader import load_index
+from vle.rag.indexing import Indexer
+from vle.rag.preprocessing import PreProcessor
+from vle.rag.prompts import build_rag_messages
+from vle.rag.retrieval import Retriever
 
 RESOURCES_DIR = Path(__file__).parent / "src" / "resources"
 OUTPUT_PATH = Path(__file__).parent / "index.json"

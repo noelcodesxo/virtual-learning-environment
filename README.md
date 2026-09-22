@@ -55,8 +55,12 @@ Docker Desktop and Docker Compose are recommended to run the backend and fronten
    set -a
    source .local.env
    set +a
-   uv run uvicorn server:app --app-dir src --reload
+   uv run uvicorn vle.api.app:app --app-dir src --reload
    ```
+
+   The previous `uvicorn server:app --app-dir src --reload` command remains a
+   supported compatibility entrypoint while integrations move to the package
+   path.
 
 6. In a second terminal, start the web interface:
 
@@ -99,3 +103,5 @@ Generated exams, answers, and scores are saved locally as individual JSON files 
 ## How it works
 
 The backend extracts and chunks your EPUBs, builds a local BM25 search index, retrieves the most relevant passages for each question, and sends those passages with your question to Ollama. The interface shows the answer together with its source passages so you can check the material it used.
+
+The Python backend is organized as the `vle` package: `api` is the thin FastAPI boundary, `rag` owns retrieval chat, `library` owns document ingestion, `exams` owns generation and storage, and `llm` contains shared provider clients. Prompt instructions are package resources, so they load reliably from the CLI, Uvicorn, and Docker.
