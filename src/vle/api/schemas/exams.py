@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from vle.api.runtime import BLOOM_LEVELS
+from vle.exams.service import BLOOM_LEVELS
 
 
 BloomLevel = Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]
