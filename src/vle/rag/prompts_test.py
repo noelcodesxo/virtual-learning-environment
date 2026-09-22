@@ -41,6 +41,30 @@ def test_build_rag_messages_excludes_bm25():
     assert "cat" not in content
 
 
+def test_build_rag_messages_excludes_index_identity_metadata():
+    chunks = [
+        {
+            "book": "Book A",
+            "chapter": "Ch1",
+            "section": "Intro",
+            "text": "some fact",
+            "source_path": "internal/resources/private.epub",
+            "source_sha256": "internal-hash-marker",
+            "source_chunk_count": 91,
+            "source_ordinal": 7,
+        }
+    ]
+    content = build_rag_messages("q", chunks)[1]["content"]
+
+    for key in ("source_path", "source_sha256", "source_chunk_count", "source_ordinal"):
+        assert f"{key}:" not in content
+    assert "internal/resources/private.epub" not in content
+    assert "internal-hash-marker" not in content
+    assert "book: Book A" in content
+    assert "chapter: Ch1" in content
+    assert "section: Intro" in content
+
+
 def test_build_rag_messages_notes_when_no_context_found():
     content = build_rag_messages("q", [])[1]["content"]
     assert "No relevant context" in content

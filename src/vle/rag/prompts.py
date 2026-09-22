@@ -6,8 +6,16 @@ SYSTEM_PROMPT = render_template(
 
 NO_CONTEXT_MESSAGE = "No relevant context was found."
 
-# Ranking weights are internal diagnostics, not context for the model.
-EXCLUDED_METADATA_KEYS = {"text", "bm25", "score"}
+# Index identity and ranking fields are internal metadata, not context for the model.
+EXCLUDED_METADATA_KEYS = {
+    "text",
+    "bm25",
+    "score",
+    "source_path",
+    "source_sha256",
+    "source_chunk_count",
+    "source_ordinal",
+}
 
 
 def build_rag_messages(query: str, chunks: list[dict]) -> list[dict[str, str]]:
