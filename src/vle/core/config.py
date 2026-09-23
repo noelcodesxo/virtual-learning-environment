@@ -24,7 +24,7 @@ class Settings:
         repository_root = Path(__file__).resolve().parents[3]
         default_model = os.environ.get("LLM_MODEL", "qwen3:8b")
         return cls(
-            resources_dir=repository_root / "src" / "resources",
+            resources_dir=Path(os.environ.get("RESOURCES_DIR", repository_root / "src" / "resources")),
             index_path=Path(os.environ.get("INDEX_PATH", repository_root / "index.json")),
             exams_dir=Path(os.environ.get("EXAMS_DIR", repository_root / "data" / "exams")),
             exam_jobs_dir=Path(os.environ.get("EXAM_JOBS_DIR", repository_root / "data" / "exam_jobs")),

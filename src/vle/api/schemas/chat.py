@@ -12,7 +12,6 @@ class Source(BaseModel):
     book: str | None = None
     chapter: str | None = None
     section: str | None = None
-    score: float
 
 
 class ChatResponse(BaseModel):

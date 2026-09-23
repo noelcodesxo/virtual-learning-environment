@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -10,7 +11,6 @@ from vle.exams.durable_job_store import ExamJobStore
 from vle.exams.service import BLOOM_LEVELS
 from vle.exams.store import ExamStore
 from vle.library.service import LibraryService
-from vle.rag.index_loader import load_index
 from vle.rag.retrieval import Retriever
 
 
@@ -30,17 +30,18 @@ EXAM_TOPIC_MAP_MODEL = settings.exam_topic_map_model
 TOPIC_MAP_MAX_ATTEMPTS = settings.topic_map_max_attempts
 
 state: dict = {}
-library = LibraryService(RESOURCES_DIR, INDEX_PATH)
+LEGACY_RESOURCES_DIR = Path(__file__).resolve().parents[3] / "src" / "resources"
+library = LibraryService(
+    RESOURCES_DIR,
+    INDEX_PATH,
+    legacy_resources_dir=LEGACY_RESOURCES_DIR,
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize persisted state and recover interrupted exam jobs."""
-    books = library.list_books()
-    if not books:
-        state["index"] = []
-    else:
-        state["index"] = load_index(INDEX_PATH) if INDEX_PATH.exists() else library.build_index()
+    state["index"] = library.initialize(INDEX_PATH)
     state["retriever"] = Retriever()
     state["chapter_loader"] = library
     state["exam_store"] = ExamStore(EXAMS_DIR)
