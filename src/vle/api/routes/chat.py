@@ -59,7 +59,7 @@ def chat(request: ChatRequest):
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
 
     sources = [
-        Source(book=r.get("book"), chapter=r.get("chapter"), section=r.get("section"), score=r["score"])
+        Source(book=r.get("book"), chapter=r.get("chapter"), section=r.get("section"))
         for r in results
     ]
     return ChatResponse(answer=answer, sources=sources)

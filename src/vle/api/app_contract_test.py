@@ -208,9 +208,12 @@ def test_chat_returns_answer_sources_and_safe_debug_ranking_metadata(monkeypatch
 
     assert response.answer == "the answer"
     assert response.sources == [
-        server.Source(book="AI Engineering", chapter="Ch. 4", section="RLHF", score=0.82)
+        server.Source(book="AI Engineering", chapter="Ch. 4", section="RLHF")
     ]
-    assert "score" in caplog.text
+    assert response.model_dump()["sources"] == [
+        {"book": "AI Engineering", "chapter": "Ch. 4", "section": "RLHF"}
+    ]
+    assert "'score': 0.82" in caplog.text
     assert "AI Engineering" in caplog.text
     assert "what is RLHF?" not in caplog.text
     assert "rlhf trains a reward model" not in caplog.text

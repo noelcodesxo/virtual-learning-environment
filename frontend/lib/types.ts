@@ -2,7 +2,6 @@ export type Source = {
   book?: string | null;
   chapter?: string | null;
   section?: string | null;
-  score: number;
 };
 
 export type ChatResponse = { answer: string; sources: Source[] };
