@@ -339,37 +339,50 @@ def test_list_documents_includes_filename_and_format_without_extracting_text(tmp
     assert pdf_extractor.paths == []
 
 
-def test_load_exam_text_uses_bounded_evenly_distributed_document_excerpts(tmp_path):
+def test_load_exam_text_includes_every_ordered_pdf_page_in_more_than_twelve_excerpts(tmp_path):
     pdf_extractor = _PdfExtractor([
-        {"book": "Research paper", "chapter": f"Page {number}", "section": None, "text": f"page {number} " + "word " * 280}
-        for number in range(1, 5)
+        {
+            "book": "Research paper",
+            "chapter": f"Page {number}",
+            "section": None,
+            "text": f"page marker {number} " + "word " * 330,
+        }
+        for number in range(1, 16)
     ])
     service = LibraryService(tmp_path / "resources", tmp_path / "index.json", [pdf_extractor])
     service.resources_dir.mkdir()
     (service.resources_dir / "research.pdf").write_bytes(b"pdf")
 
-    exam_text = service.load_exam_text("Research paper", "Entire document", num_questions=2)
+    exam_text = service.load_exam_text("Research paper", "Entire document")
 
-    assert exam_text.count("Source excerpt") == 2
-    assert "Page 1" in exam_text
-    assert "Page 4" in exam_text
-    assert "Page 2" not in exam_text
+    assert exam_text.count("Source excerpt") > 12
+    page_markers = [exam_text.index(f"Page {number}") for number in range(1, 16)]
+    assert page_markers == sorted(page_markers)
+    assert all(f"page marker {number}" in exam_text for number in range(1, 16))
 
 
-def test_load_exam_text_chunks_epub_chapters_with_the_same_limits(tmp_path):
+def test_load_exam_text_includes_every_ordered_epub_chapter_chunk(tmp_path):
     epub_extractor = _FakeExtractor([
-        {"book": "Course book", "chapter": "1. Start", "section": None, "text": f"part {number} " + "word " * 280}
-        for number in range(1, 5)
+        {
+            "book": "Course book",
+            "chapter": "1. Start",
+            "section": None,
+            "text": f"chapter marker {number} " + "word " * 330,
+        }
+        for number in range(1, 16)
+    ] + [
+        {"book": "Course book", "chapter": "2. Finish", "section": None, "text": "other chapter"}
     ])
     service = LibraryService(tmp_path / "resources", tmp_path / "index.json", [epub_extractor])
     service.resources_dir.mkdir()
     (service.resources_dir / "course.epub").write_bytes(b"epub")
 
-    exam_text = service.load_exam_text("Course book", "1. Start", num_questions=2)
+    exam_text = service.load_exam_text("Course book", "1. Start")
 
-    assert exam_text.count("Source excerpt") == 2
-    assert "part 1" in exam_text
-    assert "part 4" in exam_text
+    assert exam_text.count("Source excerpt") > 12
+    marker_positions = [exam_text.index(f"chapter marker {number}") for number in range(1, 16)]
+    assert marker_positions == sorted(marker_positions)
+    assert "other chapter" not in exam_text
 
 
 def test_list_books_preserves_epub_chapters(tmp_path):

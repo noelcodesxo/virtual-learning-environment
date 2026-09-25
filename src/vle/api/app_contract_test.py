@@ -346,7 +346,7 @@ class _FakeChapterLoader:
             raise ValueError(f"Chapter {chapter!r} not found in {book!r}")
         return self._chapter_text_by_key[(book, chapter)]
 
-    def load_exam_text(self, book, chapter, num_questions):
+    def load_exam_text(self, book, chapter):
         return self.load_chapter_text(book, chapter)
 
 
@@ -616,7 +616,7 @@ def test_generate_exam_logs_unavailable_topic_map_model_and_returns_503(monkeypa
     assert calls == [("openrouter", "missing/model")]
 
 
-def test_generate_exam_uses_the_local_chat_model_for_topic_mapping_by_default(monkeypatch):
+def test_generate_exam_uses_the_local_chat_model_for_topic_mapping_when_configured(monkeypatch):
     monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
     monkeypatch.setattr(server, "EXAM_TOPIC_MAP_PROVIDER", "ollama")
     monkeypatch.setattr(server, "EXAM_TOPIC_MAP_MODEL", server.DEFAULT_MODEL)
@@ -736,17 +736,14 @@ def test_generate_exam_retries_invalid_topic_maps_and_recovers_on_the_third_atte
     topic_map_responses = iter(["not json", "still not json", json.dumps(TOPIC_MAP)])
     topic_map_calls = []
 
-    class TopicMapClient:
+    class StageAwareClient:
         def chat(self, messages, response_format=None):
-            topic_map_calls.append((messages, response_format))
-            return next(topic_map_responses)
+            if "content map for an exam writer" in messages[0]["content"]:
+                topic_map_calls.append((messages, response_format))
+                return next(topic_map_responses)
+            return json.dumps([_exam_question()])
 
-    def fake_build_client(provider, model):
-        if provider == server.EXAM_TOPIC_MAP_PROVIDER and model == server.EXAM_TOPIC_MAP_MODEL:
-            return TopicMapClient()
-        return _FakeClient(json.dumps([_exam_question()]))
-
-    monkeypatch.setattr(server, "build_client", fake_build_client)
+    monkeypatch.setattr(server, "build_client", lambda provider, model: StageAwareClient())
     caplog.set_level(logging.INFO, logger="uvicorn.error")
 
     response = server.generate_exam(server.GenerateExamRequest(source="Book", chapter="Chapter", num_questions=1))

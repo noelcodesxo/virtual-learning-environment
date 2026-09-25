@@ -26,6 +26,38 @@ from vle.llm.clients import build_client
 
 
 BLOOM_LEVELS = ("remember", "understand", "apply", "analyze", "evaluate", "create")
+CONTEXT_LIMIT_ERROR_DETAIL = (
+    "The selected source exceeds the configured model's context limit. "
+    "Choose a model with a larger context window or select a shorter chapter or section. "
+    "No exam was saved."
+)
+
+
+def _context_limit_error_detail(error: urllib.error.HTTPError) -> str | None:
+    if error.code == 413:
+        return CONTEXT_LIMIT_ERROR_DETAIL
+    if error.code not in {400, 422}:
+        return None
+
+    try:
+        body = error.read().decode("utf-8", errors="replace").lower()
+    except (AttributeError, OSError, ValueError):
+        return None
+    context_error = (
+        "context" in body
+        and any(word in body for word in ("exceed", "limit", "length", "window", "long", "maximum"))
+    )
+    token_error = (
+        "token" in body
+        and any(word in body for word in ("exceed", "limit", "length", "maximum", "too many"))
+    )
+    prompt_error = (
+        "prompt" in body
+        and any(word in body for word in ("exceed", "limit", "length", "long", "too many", "maximum"))
+    )
+    if context_error or token_error or prompt_error:
+        return CONTEXT_LIMIT_ERROR_DETAIL
+    return None
 
 
 class ExamServiceError(Exception):
@@ -166,6 +198,9 @@ class ExamService:
                 raw = client.chat(messages, response_format=response_format)
                 return parse_topic_map_json(raw, chapter_text)
             except urllib.error.HTTPError as exc:
+                context_limit_detail = _context_limit_error_detail(exc)
+                if context_limit_detail:
+                    raise ExamServiceError(413, context_limit_detail) from exc
                 if self.topic_map_provider == "openrouter" and exc.code == 404:
                     self.logger.error(
                         "Exam topic-map generation attempt %d/%d failed: Configured topic-map model %r is not available on OpenRouter (HTTP 404).",
@@ -207,7 +242,7 @@ class ExamService:
         if generated_from == "description" and not description:
             raise ExamServiceError(400, "description must not be empty when generated_from is 'description'")
         try:
-            chapter_text = self.chapter_loader.load_exam_text(source, chapter, num_questions)
+            chapter_text = self.chapter_loader.load_exam_text(source, chapter)
         except ValueError as exc:
             raise ExamServiceError(404, str(exc)) from exc
         selected_levels = list(dict.fromkeys(bloom_levels or self.bloom_levels))
@@ -222,6 +257,11 @@ class ExamService:
             raw = self.client_factory("openrouter", self.exam_model).chat(messages)
         except KeyError as exc:
             raise ExamServiceError(500, f"Missing required environment variable: {exc}") from exc
+        except urllib.error.HTTPError as exc:
+            context_limit_detail = _context_limit_error_detail(exc)
+            if context_limit_detail:
+                raise ExamServiceError(413, context_limit_detail) from exc
+            raise ExamServiceError(502, f"LLM request failed: {exc}") from exc
         except (urllib.error.URLError, TimeoutError) as exc:
             raise ExamServiceError(502, f"LLM request failed: {exc}") from exc
         finally:
