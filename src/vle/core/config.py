@@ -23,6 +23,11 @@ class Settings:
     def from_environment(cls) -> "Settings":
         repository_root = Path(__file__).resolve().parents[3]
         default_model = os.environ.get("LLM_MODEL", "qwen3:8b")
+        exam_model = os.environ.get("EXAM_MODEL", "anthropic/claude-3.5-sonnet")
+        topic_map_provider = os.environ.get("EXAM_TOPIC_MAP_PROVIDER", "openrouter")
+        configured_topic_map_model = os.environ.get("EXAM_TOPIC_MAP_MODEL")
+        if configured_topic_map_model is None:
+            configured_topic_map_model = default_model if topic_map_provider == "ollama" else exam_model
         return cls(
             resources_dir=Path(os.environ.get("RESOURCES_DIR", repository_root / "src" / "resources")),
             index_path=Path(os.environ.get("INDEX_PATH", repository_root / "index.json")),
@@ -31,8 +36,8 @@ class Settings:
             ollama_base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
             default_model=default_model,
             exam_builder_enabled=os.environ.get("EXAM_BUILDER_ENABLED", "false").lower() == "true",
-            exam_model=os.environ.get("EXAM_MODEL", "anthropic/claude-3.5-sonnet"),
-            exam_topic_map_provider=os.environ.get("EXAM_TOPIC_MAP_PROVIDER", "ollama"),
-            exam_topic_map_model=os.environ.get("EXAM_TOPIC_MAP_MODEL", default_model),
+            exam_model=exam_model,
+            exam_topic_map_provider=topic_map_provider,
+            exam_topic_map_model=configured_topic_map_model,
             topic_map_max_attempts=3,
         )

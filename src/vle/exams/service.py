@@ -26,6 +26,24 @@ from vle.llm.clients import build_client
 
 
 BLOOM_LEVELS = ("remember", "understand", "apply", "analyze", "evaluate", "create")
+CONTEXT_LIMIT_ERROR_DETAIL = (
+    "The selected source exceeds the configured model's context window. Choose a model with a larger "
+    "context window, configure a larger limit if the provider supports it, or select a shorter source. "
+    "No exam was saved."
+)
+_CONTEXT_LIMIT_MARKERS = (
+    "context_length_exceeded",
+    "context length",
+    "context window",
+    "maximum context",
+    "max context",
+    "prompt is too long",
+    "prompt too long",
+    "input is too long",
+    "input too long",
+    "too many tokens",
+    "reduce the length of the messages",
+)
 
 
 class ExamServiceError(Exception):
@@ -92,6 +110,17 @@ class ExamService:
             self.exam_job_store.save(job)
         except ExamJobStoreError as exc:
             raise ExamServiceError(500, "Could not save exam generation job") from exc
+
+    @staticmethod
+    def _is_context_limit_error(error: urllib.error.HTTPError) -> bool:
+        if error.code == 413:
+            return True
+        try:
+            body = error.read(8192).decode("utf-8", errors="replace").lower()
+        except OSError:
+            body = ""
+        message = f"{error.reason} {body}".lower()
+        return any(marker in message for marker in _CONTEXT_LIMIT_MARKERS)
 
     def _update_job(self, job_id: str, **changes: str | None) -> dict | None:
         job = self.jobs.get(job_id)
@@ -166,6 +195,8 @@ class ExamService:
                 raw = client.chat(messages, response_format=response_format)
                 return parse_topic_map_json(raw, chapter_text)
             except urllib.error.HTTPError as exc:
+                if self._is_context_limit_error(exc):
+                    raise ExamServiceError(413, CONTEXT_LIMIT_ERROR_DETAIL) from exc
                 if self.topic_map_provider == "openrouter" and exc.code == 404:
                     self.logger.error(
                         "Exam topic-map generation attempt %d/%d failed: Configured topic-map model %r is not available on OpenRouter (HTTP 404).",
@@ -222,6 +253,10 @@ class ExamService:
             raw = self.client_factory("openrouter", self.exam_model).chat(messages)
         except KeyError as exc:
             raise ExamServiceError(500, f"Missing required environment variable: {exc}") from exc
+        except urllib.error.HTTPError as exc:
+            if self._is_context_limit_error(exc):
+                raise ExamServiceError(413, CONTEXT_LIMIT_ERROR_DETAIL) from exc
+            raise ExamServiceError(502, f"LLM request failed: {exc}") from exc
         except (urllib.error.URLError, TimeoutError) as exc:
             raise ExamServiceError(502, f"LLM request failed: {exc}") from exc
         finally:
