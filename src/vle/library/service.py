@@ -17,7 +17,6 @@ from vle.rag.preprocessing import PreProcessor
 DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 EXAM_CHUNK_SIZE = 1600
 EXAM_CHUNK_OVERLAP = 200
-MAX_EXAM_SOURCE_CHUNKS = 12
 LEGACY_MIGRATION_MARKER = ".legacy-resources-migrated"
 
 logger = logging.getLogger(__name__)
@@ -217,13 +216,9 @@ class LibraryService:
     def load_exam_text(self, book_title: str, chapter_title: str, num_questions: int) -> str:
         source_text = self._format_exam_source(self._source_chunks(book_title, chapter_title))
         exam_chunks = self._split_exam_text(source_text)
-        selected_chunks = self._select_evenly_spaced(
-            exam_chunks,
-            min(num_questions, MAX_EXAM_SOURCE_CHUNKS),
-        )
         return "\n\n".join(
             f"Source excerpt {index}:\n{chunk}"
-            for index, chunk in enumerate(selected_chunks, start=1)
+            for index, chunk in enumerate(exam_chunks, start=1)
         )
 
     def _source_chunks(self, book_title: str, chapter_title: str) -> list[dict]:
@@ -381,14 +376,6 @@ class LibraryService:
                 overlap_length += len(words[overlap_start]) + 1
             start = overlap_start if overlap_start > start else end
         return chunks
-
-    @staticmethod
-    def _select_evenly_spaced(chunks: list[str], count: int) -> list[str]:
-        if len(chunks) <= count:
-            return chunks
-        if count == 1:
-            return [chunks[len(chunks) // 2]]
-        return [chunks[round(index * (len(chunks) - 1) / (count - 1))] for index in range(count)]
 
     @staticmethod
     def _format_exam_source(chunks: list[dict]) -> str:

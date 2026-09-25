@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import urllib.error
@@ -587,6 +588,35 @@ def test_generate_exam_raises_502_when_model_output_cannot_be_parsed(monkeypatch
     assert exc_info.value.status_code == 502
 
 
+def test_generate_exam_returns_413_without_saving_when_source_exceeds_context_limit(monkeypatch):
+    monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
+    monkeypatch.setitem(server.state, "chapter_loader", _FakeChapterLoader(
+        chapter_text_by_key={("Book", "Chapter"): "the complete source"}
+    ))
+    exams = {}
+    exam_store = _FakeExamStore()
+    monkeypatch.setitem(server.state, "exams", exams)
+    monkeypatch.setitem(server.state, "exam_store", exam_store)
+
+    class ContextLimitClient:
+        def chat(self, messages, response_format=None):
+            raise urllib.error.HTTPError(
+                "https://openrouter.ai/api/v1/chat/completions", 400, "Bad Request", {},
+                io.BytesIO(b'{"error":{"message":"maximum context length exceeded"}}'),
+            )
+
+    monkeypatch.setattr(server, "build_client", lambda provider, model: ContextLimitClient())
+
+    with pytest.raises(HTTPException) as exc_info:
+        server.generate_exam(server.GenerateExamRequest(source="Book", chapter="Chapter"))
+
+    assert exc_info.value.status_code == 413
+    assert "exceeds the configured model's context window" in exc_info.value.detail
+    assert "No exam was saved" in exc_info.value.detail
+    assert exam_store.saved == []
+    assert exams == {}
+
+
 def test_generate_exam_logs_unavailable_topic_map_model_and_returns_503(monkeypatch, caplog):
     monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
     monkeypatch.setattr(server, "EXAM_TOPIC_MAP_PROVIDER", "openrouter")
@@ -616,7 +646,7 @@ def test_generate_exam_logs_unavailable_topic_map_model_and_returns_503(monkeypa
     assert calls == [("openrouter", "missing/model")]
 
 
-def test_generate_exam_uses_the_local_chat_model_for_topic_mapping_by_default(monkeypatch):
+def test_generate_exam_uses_explicit_ollama_topic_map_configuration(monkeypatch):
     monkeypatch.setattr(server, "EXAM_BUILDER_ENABLED", True)
     monkeypatch.setattr(server, "EXAM_TOPIC_MAP_PROVIDER", "ollama")
     monkeypatch.setattr(server, "EXAM_TOPIC_MAP_MODEL", server.DEFAULT_MODEL)
@@ -741,8 +771,12 @@ def test_generate_exam_retries_invalid_topic_maps_and_recovers_on_the_third_atte
             topic_map_calls.append((messages, response_format))
             return next(topic_map_responses)
 
+    client_count = 0
+
     def fake_build_client(provider, model):
-        if provider == server.EXAM_TOPIC_MAP_PROVIDER and model == server.EXAM_TOPIC_MAP_MODEL:
+        nonlocal client_count
+        client_count += 1
+        if client_count == 1:
             return TopicMapClient()
         return _FakeClient(json.dumps([_exam_question()]))
 

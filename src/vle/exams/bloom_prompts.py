@@ -157,7 +157,7 @@ def build_exam_messages(
         "design; do not reuse their source-specific content):\n"
         f"{build_bloom_question_examples(bloom_levels)}\n\n"
         f"Topic map:\n{json.dumps(topic_map, ensure_ascii=False)}\n\n"
-        f"Source excerpts:\n{chapter_text}\n\n"
+        f"Full source excerpts in original order:\n{chapter_text}\n\n"
         f"Write exactly {num_questions} multiple-choice questions as a JSON array."
     )
     return [
