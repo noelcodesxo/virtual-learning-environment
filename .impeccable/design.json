@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-04T16:34:15-05:00",
+  "title": "Design System: Study Assistant",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "primary",
+        "displayName": "Desk Ink",
+        "canonical": "#111",
+        "tonalRamp": ["#181818", "#303030", "#4d4d4d", "#6b6b6b", "#898989", "#ababab", "#d0d0d0", "#f2f2f2"]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#fff",
+        "tonalRamp": ["#1a1a1a", "#383838", "#575757", "#777777", "#999999", "#bdbdbd", "#dedede", "#fff"]
+      },
+      "rail": {
+        "role": "neutral",
+        "displayName": "Warm Rail",
+        "canonical": "#fbfbfa",
+        "tonalRamp": ["#1b1b1a", "#393938", "#595957", "#797976", "#9b9b98", "#bdbdba", "#dedeDB", "#fbfbfa"]
+      },
+      "focus-blue": {
+        "role": "tertiary",
+        "displayName": "Focus Blue",
+        "canonical": "#175dc1",
+        "tonalRamp": ["#082355", "#0d397f", "#1151aa", "#175dc1", "#4180d5", "#72a4e3", "#a6c9ef", "#dcecff"]
+      },
+      "success": {
+        "role": "tertiary",
+        "displayName": "Completion Green",
+        "canonical": "#27643a",
+        "tonalRamp": ["#102b19", "#184025", "#205532", "#27643a", "#4d8660", "#78aa88", "#abd0b2", "#def0e1"]
+      },
+      "error": {
+        "role": "tertiary",
+        "displayName": "Correction Red",
+        "canonical": "#9d2929",
+        "tonalRamp": ["#421010", "#651919", "#822121", "#9d2929", "#ba5151", "#d57f7f", "#e9b0b0", "#f9dfdf"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Workspace Display", "purpose": "Introduces a task workspace or history view." },
+      "title": { "displayName": "Task Title", "purpose": "Holds the current question or task focus." },
+      "body": { "displayName": "Reading Body", "purpose": "Carries instructions, answers, and feedback." },
+      "label": { "displayName": "Utility Label", "purpose": "Separates provenance and compact metadata from reading copy." }
+    },
+    "motion": [
+      { "name": "typing-pulse", "value": "1s infinite alternate", "purpose": "Indicates that an assistant response is in progress." }
+    ],
+    "breakpoints": [
+      { "name": "compact", "value": "700px" },
+      { "name": "narrow", "value": "420px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one clear action for a focused work area.",
+      "html": "<button class=\"ds-btn-primary\">ADD DOCUMENT</button>",
+      "css": ".ds-btn-primary { padding: 9px 14px; border: 1px solid #111; border-radius: 3px; background: #111; color: #fff; font: 500 13px 'IBM Plex Sans', system-ui, sans-serif; cursor: pointer; transition: background 0.15s ease; } .ds-btn-primary:hover { background: #333; } .ds-btn-primary:focus-visible { outline: 3px solid #175dc1; outline-offset: 3px; } .ds-btn-primary:active { background: #111; }"
+    },
+    {
+      "name": "Navigation Item",
+      "kind": "nav",
+      "refersTo": "navigation-active",
+      "description": "A compact route control with a clear active state.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Example navigation\"><a class=\"ds-nav-item\" href=\"#chat\">Chat</a><a class=\"ds-nav-item ds-active\" href=\"#exams\">Exams</a><a class=\"ds-nav-item\" href=\"#resources\">Resources</a></nav>",
+      "css": ".ds-nav { display: grid; gap: 4px; width: 180px; } .ds-nav-item { padding: 10px 12px; border-radius: 4px; color: #555; font: 400 14px 'IBM Plex Sans', system-ui, sans-serif; text-decoration: none; transition: background 0.15s ease, color 0.15s ease; } .ds-nav-item:hover { background: #eee; color: #111; } .ds-nav-item:focus-visible { outline: 3px solid #175dc1; outline-offset: 3px; } .ds-nav-item.ds-active { background: #111; color: #fff; }"
+    },
+    {
+      "name": "Chat Composer",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "The compact, uninterrupted prompt field used to begin a study exchange.",
+      "html": "<form class=\"ds-composer\"><input class=\"ds-input\" aria-label=\"Ask a question\" placeholder=\"Ask a question…\"><button class=\"ds-send\" type=\"button\" aria-label=\"Send question\">→</button></form>",
+      "css": ".ds-composer { display: flex; gap: 8px; width: min(100%, 720px); padding: 7px 8px 7px 14px; border: 1px solid #cfcfcf; border-radius: 5px; background: #fff; } .ds-input { min-width: 0; flex: 1; border: 0; outline: 0; color: #111; font: 400 14px 'IBM Plex Sans', system-ui, sans-serif; } .ds-composer:focus-within { outline: 3px solid #175dc1; outline-offset: 3px; } .ds-send { width: 31px; height: 31px; border: 0; border-radius: 3px; background: #111; color: #fff; font-size: 16px; cursor: pointer; } .ds-send:hover { background: #333; }"
+    },
+    {
+      "name": "Document Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "A clear record of a study source and its current indexing state.",
+      "html": "<article class=\"ds-card\"><span class=\"ds-badge\">PDF</span><div><h3>Learning Systems</h3><p>12 chapters · Ready</p><code>learning-systems.pdf</code></div></article>",
+      "css": ".ds-card { display: grid; grid-template-columns: auto 1fr; gap: 14px; padding: 18px; border: 1px solid #dedede; background: #fff; color: #111; font-family: 'IBM Plex Sans', system-ui, sans-serif; } .ds-badge { display: grid; width: 40px; height: 28px; place-items: center; border: 1px solid #aaa; color: #555; font: 400 10px 'IBM Plex Mono', monospace; } .ds-card h3 { margin: 0 0 5px; font-size: 16px; } .ds-card p { margin: 0; color: #666; font-size: 13px; line-height: 1.5; } .ds-card code { display: block; margin-top: 6px; color: #888; font: 400 11px 'IBM Plex Mono', monospace; }"
+    },
+    {
+      "name": "Question Option",
+      "kind": "custom",
+      "refersTo": "field",
+      "description": "A high-clarity answer choice that exposes selection without excessive color.",
+      "html": "<button class=\"ds-option ds-selected\" type=\"button\"><span class=\"ds-letter\">B</span><span>Connect the new idea to a known example.</span></button>",
+      "css": ".ds-option { display: flex; width: 100%; align-items: center; gap: 12px; padding: 13px; border: 1px solid #aaa; background: #fff; color: #111; text-align: left; font: 400 14px 'IBM Plex Sans', system-ui, sans-serif; cursor: pointer; } .ds-option:hover { border-color: #111; } .ds-option:focus-visible { outline: 3px solid #175dc1; outline-offset: 3px; } .ds-option.ds-selected { border-width: 2px; border-color: #111; background: #f1f1f1; } .ds-letter { display: inline-flex; width: 38px; height: 24px; flex: 0 0 auto; align-items: center; justify-content: center; border: 1px solid #999; border-radius: 50%; font: 400 11px 'IBM Plex Sans', system-ui, sans-serif; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Focused Study Desk",
+    "overview": "Study Assistant is a quiet, utilitarian workspace that keeps learning actions close at hand. The interface earns its sense of completeness through predictable navigation, consistent controls, direct language, and visible system feedback rather than decorative flourishes. The visual field stays intentionally spare: paper-white work areas, a slightly warm rail, near-black actions, and thin gray boundaries. Information is organized like a well-kept desk: a stable place for tools, a clear working surface, and only the cues needed to complete the next study task.",
+    "keyCharacteristics": ["Quietly utilitarian controls with high contrast actions.", "Compact, dense layout that protects reading and working space.", "Clear status, selection, error, and progress feedback.", "IBM Plex Sans for approachable utility; IBM Plex Mono for provenance and metadata."],
+    "rules": [
+      { "name": "The Color-Has-a-Job Rule", "body": "Color must communicate focus, completion, or correction. The neutral palette carries the rest of the interface.", "section": "colors" },
+      { "name": "The Reading-First Rule", "body": "Larger type introduces the current task; small mono and uppercase labels only identify supporting context.", "section": "typography" },
+      { "name": "The Stable Tools Rule", "body": "Navigation stays visible while the task surface changes; responsive layouts preserve that orientation before adding more density.", "section": "layout" },
+      { "name": "The Flat-By-Default Rule", "body": "Use a border, tonal shift, or explicit state treatment to separate content. Do not add decorative shadows.", "section": "elevation" }
+    ],
+    "dos": ["Do use Desk Ink for the one clear primary action in a working area.", "Do use 1px dividers and contained backgrounds to structure information.", "Do preserve visible keyboard focus with the 3px Focus Blue outline.", "Do state loading, success, error, and selection in direct, compact language.", "Do use IBM Plex Mono for source, file, model, and keyboard metadata."],
+    "donts": ["Don't introduce decorative gradients, shadows, or oversized display treatment.", "Don't use color as ornament; reserve it for focus, completion, correction, and destructive actions.", "Don't obscure orientation on small screens: keep the product name and main navigation available.", "Don't add large corner radii to ordinary controls or cards."]
+  }
+}
