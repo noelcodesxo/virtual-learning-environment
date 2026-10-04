@@ -19,6 +19,8 @@ export function ChatWorkspace() {
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
 
   useEffect(() => {
     api
@@ -36,6 +38,17 @@ export function ChatWorkspace() {
   );
   const replaceThread = (id: string, updater: (thread: Thread) => Thread) =>
     setThreads((all) => all.map((thread) => (thread.id === id ? updater(thread) : thread)));
+  const beginTitleEdit = () => {
+    if (!currentThread) return;
+    setTitleDraft(currentThread.title);
+    setIsEditingTitle(true);
+  };
+  const saveTitle = () => {
+    if (currentThread && titleDraft.trim()) {
+      replaceThread(currentThread.id, (thread) => ({ ...thread, title: titleDraft.trim() }));
+    }
+    setIsEditingTitle(false);
+  };
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -69,7 +82,30 @@ export function ChatWorkspace() {
     <>
       <header className="topbar">
         <div className="chat-header-controls">
-          <span className="chat-title">{currentThread?.title ?? "New chat"}</span>
+          {isEditingTitle ? (
+            <input
+              autoFocus
+              aria-label="Chat title"
+              className="chat-title-input"
+              value={titleDraft}
+              onBlur={saveTitle}
+              onChange={(event) => setTitleDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") saveTitle();
+                if (event.key === "Escape") setIsEditingTitle(false);
+              }}
+            />
+          ) : (
+            <button
+              className="chat-title"
+              type="button"
+              onClick={beginTitleEdit}
+              disabled={!currentThread}
+              aria-label={currentThread ? "Rename chat" : "New chat"}
+            >
+              {currentThread?.title ?? "New chat"}
+            </button>
+          )}
           {threads.length ? (
             <select
               className="thread-picker"
@@ -85,7 +121,14 @@ export function ChatWorkspace() {
               ))}
             </select>
           ) : null}
-          <button className="header-action" type="button" onClick={() => setCurrentThreadId(null)}>
+          <button
+            className="header-action"
+            type="button"
+            onClick={() => {
+              setCurrentThreadId(null);
+              setIsEditingTitle(false);
+            }}
+          >
             New chat
           </button>
         </div>
@@ -117,10 +160,22 @@ export function ChatWorkspace() {
             {currentThread?.messages.map((message, index) =>
               message.role === "user" ? (
                 <div className="msg-row user" key={index}>
+                  <span className="message-avatar user-avatar" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <circle cx="12" cy="8" r="3.25" />
+                      <path d="M5.5 20c.8-3.35 3.02-5 6.5-5s5.7 1.65 6.5 5" />
+                    </svg>
+                  </span>
                   <div className="msg-user">{message.content}</div>
                 </div>
               ) : (
                 <div className="msg-assistant" key={index}>
+                  <span className="message-avatar assistant-avatar" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <rect x="5" y="7" width="14" height="11" rx="2" />
+                      <path d="M12 4v3M9 12h.01M15 12h.01M9 15h6" />
+                    </svg>
+                  </span>
                   <div className={`msg-assistant-text${message.error ? " error" : ""}`}>{message.content}</div>
                   {message.sources?.length ? (
                     <div className="sources">
@@ -159,7 +214,9 @@ export function ChatWorkspace() {
               autoComplete="off"
             />
             <button className="send-btn" disabled={isSending || !query.trim()} aria-label="Send question">
-              →
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M3 3.5 17 10 3 16.5l2.25-5.1H11v-2.8H5.25L3 3.5Z" />
+              </svg>
             </button>
           </div>
         </form>

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Study Assistant",
+  title: "Virtual Learning Environment",
   description: "Ask questions and build exams from your indexed library.",
 };
 
