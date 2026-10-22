@@ -17,7 +17,7 @@ A small, single-user learning environment for asking questions about the materia
 - [Python](https://www.python.org/) 3.13 or later
 - [uv](https://docs.astral.sh/uv/) for Python dependencies
 - [Ollama](https://ollama.com/) running locally
-- Node.js 22 or later and npm (for the web interface)
+- Node.js 22.23.4 and npm (for the web interface; see `frontend/.nvmrc`)
 
 Docker Desktop and Docker Compose are recommended to run the backend and frontend in containers. However, you can run the frontend and backend separately if you choose to.
 
@@ -99,3 +99,26 @@ Generated exams, answers, and scores are saved locally as individual JSON files 
 ## How it works
 
 The backend extracts and chunks your EPUBs, builds a local BM25 search index, retrieves the most relevant passages for each question, and sends those passages with your question to Ollama. The interface shows the answer together with its source passages so you can check the material it used.
+
+## Dependency maintenance
+
+Direct npm and Python dependencies use exact versions; commit both lockfiles when
+updating them. Run `npm ci` in `frontend/` and `uv sync --locked` at the root for
+reproducible installs. `frontend/.npmrc` saves future npm additions as exact versions.
+Use `npm install package@VERSION` and `uv add 'package==VERSION'` for reviewed updates.
+
+Node is pinned in `frontend/.nvmrc`, CI, and the frontend Docker stages. Docker base
+images use immutable digests, and CI actions use commit SHAs. Update these pins
+regularly to receive security fixes; pinning alone does not make a package safe.
+The uv CLI and setuptools build backend are also pinned. Python's `>=3.13`
+compatibility requirement and `.python-version` select a supported interpreter line;
+the production Docker interpreter is pinned separately.
+
+Before accepting updates, run `npm audit`, `npm audit --omit=dev`, `npm run lint`,
+`npm test`, and `npm run build` in `frontend/`, then `uv run pytest -q` at the root.
+For a Python advisory check, export the locked third-party packages with
+`uv export --locked --no-emit-project --no-hashes -o /tmp/vle-audit-requirements.txt`,
+then run `uvx pip-audit --disable-pip --no-deps -r /tmp/vle-audit-requirements.txt`.
+
+See [the October 22, 2026 security review](docs/dependency-security-2026-10-22.md)
+for the checked incidents, updates, and remaining development-tool advisory.
